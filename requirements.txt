@@ -1,0 +1,4 @@
+aiohttp
+gdown
+pandas
+networkx
