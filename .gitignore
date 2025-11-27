@@ -208,14 +208,14 @@ __marimo__/
 
 
 # --- Ignore Data & Heavy Files ---
-datasets/data/
-datasets/data/movielens-32m/movielens-original/
-datasets/data/movielens-32m/movielens-modern/
-data/amazon-sports/
-data/goodreads/
-data/posters/
-datasets/data/movielens-32m/features/
-data/ml_tgn/
+data/datasets/
+data/datasets/movielens-32m/movielens-original/
+data/datasets/movielens-32m/movielens-modern/
+datasets/amazon-sports/
+datsets/goodreads/
+datasets/posters/
+data/datasets/movielens-32m/features/
+datasets/ml_tgn/
 
 # Ignore specific large file types anywhere in the project
 *.npy

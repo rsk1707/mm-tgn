@@ -3,8 +3,8 @@ import numpy as np
 from pathlib import Path
 
 # CONFIG
-DATA_DIR = Path('..../data/movielens-32m/movielens-original/ml-32m') # Point to your unzipped folder
-OUTPUT_DIR = Path('../data/movielens-32m/movielens-modern/ml-modern')
+DATA_DIR = Path('..../datasets/movielens-32m/movielens-original/ml-32m') # Point to your unzipped folder
+OUTPUT_DIR = Path('../datasets/movielens-32m/movielens-modern/ml-modern')
 MIN_YEAR = 2018
 MIN_INTERACTIONS = 10 # 10-core filtering
 TARGET_SIZE = 1_000_000 # Max interactions

@@ -4,7 +4,7 @@ from typing import Optional
 
 TMDB_API = "https://api.themoviedb.org/3"
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "../data/movielens-32m/movielens-original/ml-32m"
+DATA_DIR = BASE_DIR / "../datasets/movielens-32m/movielens-original/ml-32m"
 def parse_year_from_title(title: str) -> Optional[str]:
     match = re.search(r"\((\d{4})\)\s*$", title or "")
     return match.group(1) if match else None

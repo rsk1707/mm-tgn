@@ -3,8 +3,8 @@ from pathlib import Path
 import os
 
 # CONFIG
-DATA_DIR = Path("../data/movielens-32m/movielens-modern/ml-modern")
-POSTERS_DIR = Path("../data/movielens-32m/movielens-modern/ml-modern-posters")
+DATA_DIR = Path("../datasets/movielens-32m/movielens-modern/ml-modern")
+POSTERS_DIR = Path("../datasets/movielens-32m/movielens-modern/ml-modern-posters")
 
 def verify_dataset():
     print(f"🔍 Verifying dataset quality in: {DATA_DIR}")
