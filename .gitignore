@@ -205,3 +205,34 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# --- Ignore Data & Heavy Files ---
+datasets/data/
+datasets/data/movielens-32m/movielens-original/
+datasets/data/movielens-32m/movielens-modern/
+data/amazon-sports/
+data/goodreads/
+data/posters/
+datasets/data/movielens-32m/features/
+data/ml_tgn/
+
+# Ignore specific large file types anywhere in the project
+*.npy
+*.pt
+*.pth
+*.tar.gz
+*.zip
+*.csv
+*.json
+
+# --- Exception: Keep Configs/Samples if needed ---
+# If you have small config JSONs you want to keep, un-comment below:
+# !data/config/*.json
+
+# --- System & Python Junk ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+.env

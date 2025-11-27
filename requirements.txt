@@ -1,0 +1,27 @@
+git add .
+
+git commit -m "feat(data): implement complete multimodal pipeline (Preprocessing, Scraping, SOTA Embeddings)
+
+Phase 1 Complete. This commit introduces the full end-to-end data engineering pipeline for MM-TGN.
+
+1. Dataset Preprocessing:
+   - Implemented `create_subset.py`: Generates 'ML-Modern' (2018+, 10-core, 1M interactions) from MovieLens-32M.
+   - Implemented `movielens_scraper.py`: Async scraper to fetch high-res posters and TMDB plot summaries (handled 22k items).
+
+2. Universal Feature Extraction:
+   - Created `generate_features_universal.py`: Agnostic encoder supporting MovieLens, Amazon, and GoodReads.
+   - Integrated Multi-Tier Encoders:
+     * Baseline: SBERT (MPNet) + OpenAI CLIP.
+     * Smart SOTA: Qwen2-1.5B (LLM) + Google SigLIP (SO400M).
+     * ImageBind: Full ImageBind-Huge integration for aligned modalities.
+   - Implemented dynamic batching and VRAM management for 16GB GPUs.
+
+3. TGN Integration:
+   - Added `format_for_tgn.py`: Merges raw interactions with generated .npy features.
+   - Implemented robust 'Zero-Padding' logic to handle cold-start items without crashing training.
+
+4. Verification Suite:
+   - Added `verify_data.py` (Raw Data Health) and `verify_features.py` (Embedding Alignment).
+   - Achieved >99.9% feature coverage on ML-Modern.
+
+Ref: Setup complete. Ready for TGN model training."
