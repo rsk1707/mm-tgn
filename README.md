@@ -20,14 +20,13 @@ A robust, end-to-end data engineering framework for **Multimodal Temporal Graph 
 
 ---
 
-## 🏗️ Pipeline Architecture
-
-```mermaid
 graph LR
-    A[Raw Data] --> B(Preprocessing & Filtering)
+    A[Raw Data] --> B[Preprocessing & Filtering]
     B --> C{Async Scraper}
     C -->|Posters| D[Image Storage]
     C -->|Plot Summaries| E[Enriched Metadata]
-    D & E --> F[Universal Encoder]
-    F -->|Qwen/SigLIP/ImageBind| G[Feature Matrices .npy]
-    G --> H (Next step -> Fusing Embeddings with FiLM and transforming into TGN-acceptable format
+    D --> F[Universal Encoder]
+    E --> F
+    F -->|Qwen / SigLIP / ImageBind| G[Feature Matrices (.npy)]
+    G --> H[Next Step → Fuse Embeddings with FiLM & Transform into TGN-Compatible Format]
+
