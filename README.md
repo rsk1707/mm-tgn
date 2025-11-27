@@ -17,7 +17,6 @@ A robust, end-to-end data engineering framework for **Multimodal Temporal Graph 
     * **Dense Vision:** Google SigLIP (Sigmoid Loss for Language Image Pre-training).
     * **Unified Modality:** Meta ImageBind (Aligned audio/visual/text space).
 * **Fault Tolerance:** Async scrapers with rate-limit handling and zero-padding logic for missing multimodal assets (<0.03% data loss).
-* **TGN-Ready:** Automatically formats outputs for temporal graph learning (Node Features + Edge Lists).
 
 ---
 
@@ -31,5 +30,4 @@ graph LR
     C -->|Plot Summaries| E[Enriched Metadata]
     D & E --> F[Universal Encoder]
     F -->|Qwen/SigLIP/ImageBind| G[Feature Matrices .npy]
-    G --> H[TGN Formatter]
-    H --> I((Ready for Training))
+    G --> H (Next step -> Fusing Embeddings with FiLM and transforming into TGN-acceptable format
