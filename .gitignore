@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# environments
+env/
+
 # Distribution / packaging
 .Python
 build/
@@ -86,7 +89,13 @@ features
 
 ml-modern
 
-lightgcn
+lightgcn/__pycache__
+lightgcn/Data/*
+lightgcn/pretrain/*
+lightgcn/tensorboard
+
+._features
+
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
