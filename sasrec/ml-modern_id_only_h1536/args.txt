@@ -1,0 +1,12 @@
+batch_size,128
+dataset,ml-modern
+dropout_rate,0.2
+hidden_units,1536
+l2_emb,0.0
+lr,0.001
+maxlen,50
+mm_item_init,data/ml-modern_item_mm_init.npy
+num_blocks,2
+num_epochs,200
+num_heads,1
+train_dir,id_only_h1536
