@@ -12,7 +12,7 @@ from modules.memory import Memory
 from modules.message_aggregator import get_message_aggregator
 from modules.message_function import get_message_function
 from modules.memory_updater import get_memory_updater
-from modules.embedding_module import get_embedding_module
+from modules.embedding import get_embedding_module
 from model.time_encoding import TimeEncode
 
 

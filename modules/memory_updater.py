@@ -63,9 +63,31 @@ class RNNMemoryUpdater(SequenceMemoryUpdater):
 class LSTMMemoryUpdater(SequenceMemoryUpdater):
   def __init__(self, memory, message_dimension, memory_dimension, device):
     super(LSTMMemoryUpdater, self).__init__(memory, message_dimension, memory_dimension, device)
-
-    self.memory_updater, _ = nn.LSTMCell(input_size=message_dimension,
-                                     hidden_size=memory_dimension)
+    # Note: LSTMCell requires both hidden (h) and cell (c) states
+    # For TGN, we use GRU which only needs hidden state. LSTM support is experimental.
+    self.memory_updater = nn.LSTMCell(input_size=message_dimension,
+                                      hidden_size=memory_dimension)
+    self.cell_state = None  # Will be initialized in update_memory
+  
+  def update_memory(self, unique_node_ids, unique_messages, timestamps):
+    if len(unique_node_ids) <= 0:
+      return
+    
+    assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), \
+      "Trying to update memory to time in the past"
+    
+    memory = self.memory.get_memory(unique_node_ids)
+    self.memory.last_update[unique_node_ids] = timestamps
+    
+    # Initialize cell state if needed
+    if self.cell_state is None or self.cell_state.shape[0] != self.memory.n_nodes:
+      self.cell_state = torch.zeros(self.memory.n_nodes, self.memory.memory_dimension).to(self.device)
+    
+    cell = self.cell_state[unique_node_ids]
+    updated_memory, updated_cell = self.memory_updater(unique_messages, (memory, cell))
+    
+    self.memory.set_memory(unique_node_ids, updated_memory)
+    self.cell_state[unique_node_ids] = updated_cell
 
 class TRANSFRORMERMemoryUpdater(SequenceMemoryUpdater):
   def __init__(self, memory, message_dimension, memory_dimension, device):

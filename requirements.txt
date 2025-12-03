@@ -1,27 +1,91 @@
-git add .
+# =============================================================================
+# MM-TGN: Multimodal Temporal Graph Network
+# Requirements File
+# =============================================================================
+#
+# INSTALLATION ORDER (Important for CUDA compatibility):
+#
+# 1. Create conda environment:
+#    conda create -n mmtgn python=3.9 -y
+#    conda activate mmtgn
+#
+# 2. Install PyTorch FIRST (match your CUDA version):
+#    # For CUDA 11.8:
+#    conda install pytorch torchvision pytorch-cuda=11.8 -c pytorch -c nvidia
+#    # For CUDA 12.1:
+#    conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia
+#
+# 3. Install PyTorch Geometric (after PyTorch):
+#    pip install torch-geometric
+#    pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+#
+# 4. Install remaining dependencies:
+#    pip install -r requirements.txt
+#
+# =============================================================================
 
-git commit -m "feat(data): implement complete multimodal pipeline (Preprocessing, Scraping, SOTA Embeddings)
+# -----------------------------------------------------------------------------
+# CORE FRAMEWORK (Install via conda first - see instructions above)
+# -----------------------------------------------------------------------------
+# torch>=1.12.0  # Installed via conda
+# torchvision    # Installed via conda
 
-Phase 1 Complete. This commit introduces the full end-to-end data engineering pipeline for MM-TGN.
+# -----------------------------------------------------------------------------
+# GRAPH NEURAL NETWORKS
+# -----------------------------------------------------------------------------
+# torch-geometric>=2.0.0  # Install separately per instructions above
+# torch-scatter           # Install separately per instructions above
+# torch-sparse            # Install separately per instructions above
 
-1. Dataset Preprocessing:
-   - Implemented `create_subset.py`: Generates 'ML-Modern' (2018+, 10-core, 1M interactions) from MovieLens-32M.
-   - Implemented `movielens_scraper.py`: Async scraper to fetch high-res posters and TMDB plot summaries (handled 22k items).
+# -----------------------------------------------------------------------------
+# NUMERICAL & DATA PROCESSING (Safe, no conflicts)
+# -----------------------------------------------------------------------------
+numpy>=1.21.0,<2.0.0
+pandas>=1.4.0
+scipy>=1.7.0
 
-2. Universal Feature Extraction:
-   - Created `generate_features_universal.py`: Agnostic encoder supporting MovieLens, Amazon, and GoodReads.
-   - Integrated Multi-Tier Encoders:
-     * Baseline: SBERT (MPNet) + OpenAI CLIP.
-     * Smart SOTA: Qwen2-1.5B (LLM) + Google SigLIP (SO400M).
-     * ImageBind: Full ImageBind-Huge integration for aligned modalities.
-   - Implemented dynamic batching and VRAM management for 16GB GPUs.
+# -----------------------------------------------------------------------------
+# MACHINE LEARNING UTILITIES
+# -----------------------------------------------------------------------------
+scikit-learn>=1.0.0
 
-3. TGN Integration:
-   - Added `format_for_tgn.py`: Merges raw interactions with generated .npy features.
-   - Implemented robust 'Zero-Padding' logic to handle cold-start items without crashing training.
+# -----------------------------------------------------------------------------
+# LOGGING & MONITORING (The missing dependency!)
+# -----------------------------------------------------------------------------
+tensorboard>=2.10.0
+protobuf>=3.19.0,<4.0.0
 
-4. Verification Suite:
-   - Added `verify_data.py` (Raw Data Health) and `verify_features.py` (Embedding Alignment).
-   - Achieved >99.9% feature coverage on ML-Modern.
+# -----------------------------------------------------------------------------
+# PROGRESS BARS
+# -----------------------------------------------------------------------------
+tqdm>=4.60.0
 
-Ref: Setup complete. Ready for TGN model training."
+# -----------------------------------------------------------------------------
+# MULTIMODAL ENCODERS (For embedding generation only)
+# These are OPTIONAL for training - only needed for data preprocessing
+# -----------------------------------------------------------------------------
+# sentence-transformers>=2.2.0  # For text embeddings
+# open-clip-torch>=2.20.0       # For image embeddings
+# transformers>=4.20.0          # Base for sentence-transformers
+
+# -----------------------------------------------------------------------------
+# IMAGE PROCESSING
+# -----------------------------------------------------------------------------
+Pillow>=8.0.0
+
+# -----------------------------------------------------------------------------
+# CONFIGURATION & UTILITIES
+# -----------------------------------------------------------------------------
+pyyaml>=6.0
+python-dateutil>=2.8.0
+
+# -----------------------------------------------------------------------------
+# ASYNC (Optional - for data scraping scripts)
+# -----------------------------------------------------------------------------
+# aiohttp>=3.8.0
+# aiofiles>=23.0.0
+
+# =============================================================================
+# QUICK FIX: If tensorboard import fails, run:
+#   pip install tensorboard protobuf
+# =============================================================================

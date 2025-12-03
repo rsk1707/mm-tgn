@@ -1,4 +1,6 @@
 import os
+import re
+import ast
 import argparse
 import numpy as np
 import pandas as pd
@@ -6,7 +8,7 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import open_clip
 from sentence_transformers import SentenceTransformer
 
@@ -30,7 +32,7 @@ TEXT_MODELS = {
         "name": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
         "type": "sbert",
         "desc": "Alibaba Qwen2 1.5B (SOTA efficient)",
-        "trust_remote": False
+        "trust_remote": False  # Fixed for stability
     },
     "imagebind": {
         "name": "imagebind_huge",
@@ -85,18 +87,16 @@ class UniversalEncoder:
                 device=self.device
             )
             self.img_model.eval()
-            # Determine dimension dynamically
             with torch.no_grad():
                 d = torch.randn(1, 3, 224, 224).to(self.device)
                 self.img_dim = self.img_model.encode_image(d).shape[-1]
 
-        # 3. Initialize ImageBind (Monolithic Model)
+        # 3. Initialize ImageBind
         if 'imagebind' in [self.txt_conf['type'], self.img_conf['type']]:
             if not IMAGEBIND_AVAILABLE:
                 raise ImportError("❌ ImageBind not installed! Run: pip install git+https://github.com/facebookresearch/ImageBind.git")
             
             print(f"   - Loading ImageBind (Huge)...")
-            # We load one shared model instance
             self.ib_model = imagebind_model.imagebind_huge(pretrained=True)
             self.ib_model.eval()
             self.ib_model.to(self.device)
@@ -106,16 +106,11 @@ class UniversalEncoder:
         print(f"   - Encoding {len(texts)} texts...")
         
         if self.txt_conf['type'] == 'sbert':
-            # Add instruction for Qwen models to boost performance
             if "Qwen" in self.txt_conf['name']:
                 texts = [f"Instruct: Retrieve semantic text embeddings.\nQuery: {t}" for t in texts]
             
             return self.text_model.encode(
-                texts, 
-                batch_size=batch_size, 
-                show_progress_bar=True, 
-                convert_to_numpy=True,
-                normalize_embeddings=True
+                texts, batch_size=batch_size, show_progress_bar=True, convert_to_numpy=True, normalize_embeddings=True
             )
             
         elif self.txt_conf['type'] == 'imagebind':
@@ -125,7 +120,6 @@ class UniversalEncoder:
                 inputs = {ModalityType.TEXT: data.load_and_transform_text(batch_texts, self.device)}
                 with torch.no_grad():
                     out = self.ib_model(inputs)
-                    # Normalize
                     feats = out[ModalityType.TEXT]
                     feats /= feats.norm(dim=-1, keepdim=True)
                     all_embs.append(feats.cpu().numpy())
@@ -137,32 +131,25 @@ class UniversalEncoder:
         
         for i in tqdm(range(0, len(image_paths), batch_size), desc="Image Batches"):
             batch_paths = image_paths[i : i+batch_size]
-            
-            # Filter for valid images in this batch
             valid_paths = [str(p) for p in batch_paths if Path(p).exists()]
             valid_indices = [idx for idx, p in enumerate(batch_paths) if Path(p).exists()]
             
-            # Prepare Output Batch (Zero-filled)
             batch_out = np.zeros((len(batch_paths), self.img_dim), dtype=np.float32)
             
             if valid_paths:
                 with torch.no_grad():
                     if self.img_conf['type'] == 'open_clip':
-                        # OpenCLIP Preprocessing
                         imgs = [Image.open(p).convert('RGB') for p in valid_paths]
                         tensors = torch.stack([self.img_preprocess(img) for img in imgs]).to(self.device)
                         feats = self.img_model.encode_image(tensors)
                         
                     elif self.img_conf['type'] == 'imagebind':
-                        # ImageBind Preprocessing
                         inputs = {ModalityType.VISION: data.load_and_transform_vision_data(valid_paths, self.device)}
                         feats = self.ib_model(inputs)[ModalityType.VISION]
 
-                    # Normalize & Move to CPU
                     feats /= feats.norm(dim=-1, keepdim=True)
                     feats_np = feats.cpu().numpy()
 
-                    # Map back to original batch positions
                     for v_idx, f_vec in zip(valid_indices, feats_np):
                         batch_out[v_idx] = f_vec
             
@@ -172,59 +159,152 @@ class UniversalEncoder:
 
 def main():
     parser = argparse.ArgumentParser(description="Universal Multimodal Embedding Generator")
-    
     # Dataset Config
     parser.add_argument("--csv-path", required=True, help="Path to metadata CSV (e.g., enriched.csv)")
     parser.add_argument("--image-dir", required=True, help="Directory containing images (e.g., posters/)")
     parser.add_argument("--output-dir", required=True, help="Where to save .npy files")
     parser.add_argument("--dataset-name", required=True, help="Prefix for output files (e.g., amazon-sports)")
-    
     # Column Mapping
     parser.add_argument("--id-col", required=True, help="Column name for Item ID (e.g., movieId, asin)")
     parser.add_argument("--text-col", required=True, help="Column name for Text (e.g., overview, description)")
-    
-    # Model Config
     parser.add_argument("--text-model", choices=TEXT_MODELS.keys(), default="baseline")
     parser.add_argument("--image-model", choices=IMAGE_MODELS.keys(), default="clip")
     parser.add_argument("--batch-size", type=int, default=32)
-    
     args = parser.parse_args()
     
-    # Setup
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"📂 Loading Data from: {args.csv_path}")
     df = pd.read_csv(args.csv_path)
     
-    # Validation
+     # --- VALIDATION BLOCK ---
+
     if args.id_col not in df.columns:
-        raise ValueError(f"ID Column '{args.id_col}' not found in CSV. Available: {list(df.columns)}")
+        raise ValueError(f"❌ ID Column '{args.id_col}' not found in CSV. Available: {list(df.columns)}")
     if args.text_col not in df.columns:
-        print(f"⚠️ Warning: Text Column '{args.text_col}' not found. Filling with empty strings.")
-        texts = [""] * len(df)
-    else:
-        texts = df[args.text_col].fillna("").astype(str).tolist()
-        
-    ids = df[args.id_col].astype(str).tolist()
+        print(f"⚠️  Warning: Primary text column '{args.text_col}' not found. Will rely on metadata (Title/Genre/Year).")
     
-    # Assume image filename is simply "{ID}.jpg"
-    # This is the standard we enforced in the cleaning step
+    # -----------------------------------------------------------
+    # UNIVERSAL METADATA ENRICHMENT
+    # -----------------------------------------------------------
+    print("📝 Augmenting Text with Metadata (Universal Logic)...")
+    
+    def parse_stringified_list(value: Union[str, list]) -> str:
+        """
+        Robustly parse stringified Python lists from CSV columns.
+        
+        Handles Amazon's category format: "['Sports', 'Gear']"
+        Also handles: nested lists, pipe-separated, and plain strings.
+        
+        Args:
+            value: String like "['Cat1', 'Cat2']" or actual list or plain string
+        
+        Returns:
+            Cleaned comma-separated string: "Cat1, Cat2"
+        """
+        if isinstance(value, list):
+            # Already a list - flatten if nested
+            flat = []
+            for item in value:
+                if isinstance(item, list):
+                    flat.extend(str(x) for x in item)
+                else:
+                    flat.append(str(item))
+            return ", ".join(flat)
+        
+        val_str = str(value).strip()
+        
+        # Handle nan/empty
+        if val_str.lower() in ('nan', 'none', ''):
+            return ''
+        
+        # Handle pipe-separated (MovieLens style): "Action|Comedy|Drama"
+        if '|' in val_str and not val_str.startswith('['):
+            return val_str.replace('|', ', ')
+        
+        # Try parsing as Python literal (safe for lists/tuples/strings)
+        if val_str.startswith('[') or val_str.startswith('('):
+            try:
+                parsed = ast.literal_eval(val_str)
+                # Recursively handle nested lists
+                return parse_stringified_list(parsed)
+            except (ValueError, SyntaxError):
+                # Fallback: regex to extract quoted strings
+                # Matches 'text' or "text" patterns
+                matches = re.findall(r"['\"]([^'\"]+)['\"]", val_str)
+                if matches:
+                    return ", ".join(matches)
+                # Last resort: strip brackets and clean
+                cleaned = val_str.strip('[]()').replace("'", "").replace('"', '')
+                return cleaned
+        
+        # Plain string - return as-is
+        return val_str
+    
+    def create_rich_text(row):
+        # 1. TITLE (Common across all datasets)
+        # Check standard variations: tmdb_title, ml_title, title, name
+        title = str(row.get('tmdb_title', row.get('ml_title', row.get('title', row.get('name', '')))))
+        if title.lower() == 'nan': title = ''
+        
+        # 2. YEAR / TIME
+        # MovieLens: ml_year | Goodreads: publication_year | Amazon: usually missing
+        year = str(row.get('ml_year', row.get('publication_year', row.get('year', ''))))
+        if year.lower() == 'nan': year = ''
+        
+        # 3. GENRES / CATEGORIES (with robust parsing)
+        # MovieLens: ml_genres (pipe-sep) | Amazon: categories (stringified list) | Goodreads: genres
+        raw_cats = row.get('tmdb_genres', row.get('categories', row.get('genres', '')))
+        cats = parse_stringified_list(raw_cats)
+            
+        # 4. EXTRAS (Brand, Author, Price range, etc.)
+        extras = []
+        
+        # Amazon Brand
+        brand = str(row.get('brand', ''))
+        if brand.lower() not in ('nan', ''):
+            extras.append(f"Brand: {brand}")
+        
+        # Goodreads Author
+        authors = str(row.get('authors', row.get('author', '')))
+        if authors.lower() not in ('nan', ''):
+            # Authors can also be stringified lists
+            authors_clean = parse_stringified_list(authors)
+            if authors_clean:
+                extras.append(f"Author: {authors_clean}")
+        
+        # Amazon Price (useful context)
+        price = str(row.get('price', ''))
+        if price.lower() not in ('nan', '') and price != '0':
+            extras.append(f"Price: ${price}")
+
+        # 5. MAIN DESCRIPTION
+        plot = str(row.get(args.text_col, ''))
+        if plot.lower() == 'nan': plot = ''
+        
+        # CONSTRUCT PROMPT
+        parts = []
+        if title: parts.append(f"Title: {title}")
+        if year: parts.append(f"Year: {year}")
+        if cats: parts.append(f"Categories: {cats}")
+        parts.extend(extras)
+        if plot: parts.append(f"Description: {plot}")
+        
+        return ". ".join(parts)
+
+    texts = df.apply(create_rich_text, axis=1).tolist()
+    ids = df[args.id_col].astype(str).tolist()
     img_paths = [Path(args.image_dir) / f"{iid}.jpg" for iid in ids]
     
     # Run Encoding
     encoder = UniversalEncoder(args.text_model, args.image_model)
-    
     print("🔄 Generating Text Embeddings...")
     txt_emb = encoder.encode_text(texts, batch_size=args.batch_size)
-    
     print("🔄 Generating Image Embeddings...")
     img_emb = encoder.encode_images(img_paths, batch_size=args.batch_size)
     
-    # Save
     print("💾 Saving Files...")
-    base_name = f"{args.dataset_name}_{args.text_model}_{args.image_model}"
-    
     np.save(out_dir / f"{args.dataset_name}_text_{args.text_model}.npy", txt_emb)
     np.save(out_dir / f"{args.dataset_name}_image_{args.image_model}.npy", img_emb)
     np.save(out_dir / f"{args.dataset_name}_ids.npy", np.array(ids))
