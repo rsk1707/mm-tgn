@@ -217,3 +217,14 @@ __pypackages__/
 
 # Keep requirements:
 # Already tracked: requirements.txt, ARCHITECTURE.md, scripts/
+checkpoints/
+data/datasets/
+data/processed/
+data/script/.checkpoints/
+logs/
+runs/ablation_A_vanilla_random/
+runs/smoke_test_fixed/
+runs/smoke_test_v2/
+runs/sota_full_run/
+runs/vanilla_baseline/
+runs/vanilla_fixed_test/
