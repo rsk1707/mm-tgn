@@ -7,13 +7,16 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus=1
 #SBATCH --mem=32G
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --output=logs/smoke_test_%j.out
 #SBATCH --error=logs/smoke_test_%j.err
 
 # ==============================================================================
 # MM-TGN Smoke Test
-# Quick verification that everything works (~10 minutes)
+# Quick verification that everything works (~45 minutes total)
+# - Training: ~25 min (1 epoch)
+# - Evaluation: ~15 min (with small n_neg=20, sample=5000)
+# - Transductive/Inductive eval: ~5 min
 # ==============================================================================
 
 echo "🧪 MM-TGN Smoke Test"
