@@ -27,7 +27,9 @@ from modules.embedding import (
     FiLMConditioner,
     UserStateFiLM,  # Novel: User-state modulation for cold-start
     GatedFusion,
-    MultimodalProjector
+    MultimodalProjector,
+    MultimodalFiLMFusion,  # NEW: FiLM fusion for text+image
+    MultimodalGatedFusion  # NEW: Gated fusion for text+image
 )
 from model.time_encoding import TimeEncode
 
@@ -98,6 +100,7 @@ class MMTGN(nn.Module):
         item_features: Optional[np.ndarray] = None,
         use_hybrid_features: bool = True,
         use_random_item_features: bool = False,  # Ablation: vanilla baseline
+        mm_fusion_mode: str = "mlp",  # NEW: Multimodal fusion mode
         # Fusion
         use_film: bool = True,
         structural_dim: Optional[int] = None,
@@ -150,6 +153,7 @@ class MMTGN(nn.Module):
                 self.logger.info(f"  Mode: RANDOM (learnable item embeddings, ablation baseline)")
             else:
                 self.logger.info(f"  Mode: SOTA (projected multimodal features)")
+                self.logger.info(f"  MM Fusion: {mm_fusion_mode.upper()}")
             
             self.hybrid_features = HybridNodeFeatures(
                 num_users=num_users,
@@ -158,7 +162,8 @@ class MMTGN(nn.Module):
                 embedding_dim=embedding_dim,
                 dropout=dropout,
                 freeze_items=True,
-                use_random_items=use_random_item_features  # Ablation flag
+                use_random_items=use_random_item_features,  # Ablation flag
+                mm_fusion_mode=mm_fusion_mode  # NEW: Multimodal fusion mode
             )
             
             # Total nodes includes padding at index 0
@@ -635,7 +640,8 @@ def create_mmtgn(
     use_hybrid_features: bool = True,
     embedding_module_type: str = "graph_attention",
     structural_dim: Optional[int] = None,  # For Channel 2 integration
-    use_random_item_features: bool = False  # Ablation: vanilla baseline
+    use_random_item_features: bool = False,  # Ablation: vanilla baseline
+    mm_fusion_mode: str = "mlp"  # NEW: Multimodal fusion mode ('mlp', 'film', 'gated')
 ) -> MMTGN:
     """
     Factory function to create MMTGN from a TemporalDataset.
@@ -646,6 +652,10 @@ def create_mmtgn(
         structural_dim: Dimension of Channel 2 embeddings (None = bypass FiLM)
         use_random_item_features: If True, use learnable random embeddings instead
                                   of SOTA features (ablation study baseline)
+        mm_fusion_mode: Multimodal fusion strategy for text+image
+                       'mlp' = 2-layer MLP projection (default)
+                       'film' = FiLM conditioning (text modulates image)
+                       'gated' = Gated fusion with learned attention
         ... (other hyperparameters)
     
     Returns:
@@ -700,6 +710,7 @@ def create_mmtgn(
         item_features=item_features,
         use_hybrid_features=use_hybrid_features,
         use_random_item_features=use_random_item_features,  # Ablation flag
+        mm_fusion_mode=mm_fusion_mode,  # NEW: Multimodal fusion ablation
         use_film=True,  # Always enable FiLM logic (will bypass if structural_dim=None)
         structural_dim=structural_dim,  # None = bypass mode
         mean_time_shift_src=time_stats[0],

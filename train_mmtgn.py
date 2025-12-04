@@ -126,15 +126,20 @@ def get_args():
                         Used when switching between sota (2688) and baseline (1536) features
                         """)
     
-    # Experiment C: Fusion Mode
-    parser.add_argument("--fusion-mode", type=str, default="film",
-                        choices=["film", "concat", "none"],
+    # Experiment C: Multimodal Fusion Mode (Text + Image → Combined)
+    parser.add_argument("--mm-fusion", type=str, default="mlp",
+                        choices=["mlp", "film", "gated"],
                         help="""
-                        Feature fusion strategy:
-                        - film: FiLM conditioning (γ⊙x + β)
-                        - concat: Simple concatenation
-                        - none: No fusion (temporal channel only)
+                        Multimodal fusion strategy for combining text and image features:
+                        - mlp: 2-layer MLP projection (default, simple but effective)
+                        - film: FiLM conditioning (text modulates image via γ⊙x + β)
+                        - gated: Gated fusion with learned attention weights
                         """)
+    
+    # Legacy argument (kept for backward compatibility, currently unused)
+    parser.add_argument("--fusion-mode", type=str, default="none",
+                        choices=["film", "concat", "none"],
+                        help="(DEPRECATED) Channel 2 fusion - not used in current single-channel setup")
     
     # Evaluation
     parser.add_argument("--n-neg-eval", type=int, default=100,
@@ -588,9 +593,9 @@ def train(args):
         logger.info("\n🧪 Feature Mode: SOTA (Qwen2 + SigLIP, 2688-dim)")
         use_random_item_features = False
     
-    # Experiment C: Fusion Mode
-    fusion_mode = args.fusion_mode
-    logger.info(f"   Fusion Mode: {fusion_mode}")
+    # Experiment C: Multimodal Fusion Mode
+    mm_fusion = args.mm_fusion
+    logger.info(f"   Multimodal Fusion: {mm_fusion}")
     
     # Determine structural_dim based on fusion mode
     # (Currently Channel 2 is not available, so always None)
@@ -610,7 +615,8 @@ def train(args):
         use_hybrid_features=args.use_hybrid,
         embedding_module_type=args.embedding_module,
         structural_dim=structural_dim,
-        use_random_item_features=use_random_item_features  # Ablation: random baseline
+        use_random_item_features=use_random_item_features,  # Ablation: random baseline
+        mm_fusion_mode=mm_fusion  # NEW: Multimodal fusion ablation
     )
     
     n_params = sum(p.numel() for p in model.parameters())
@@ -624,8 +630,7 @@ def train(args):
     logger.info(f"  Hybrid Features:      {args.use_hybrid}")
     logger.info(f"  Embedding Module:     {args.embedding_module}")
     logger.info(f"  Node Feature Type:    {node_feature_type}")
-    logger.info(f"  Fusion Mode:          {fusion_mode}")
-    logger.info(f"  FiLM (Channel 2):     {'ENABLED' if structural_dim else 'BYPASS MODE'}")
+    logger.info(f"  MM Fusion (Text+Img): {mm_fusion}")
     
     # =================================================================
     # OPTIMIZER
@@ -820,6 +825,23 @@ def train(args):
     logger.info(f"  AP:  {test_lp_metrics['AP']:.4f}")
     logger.info(f"  AUC: {test_lp_metrics['AUC']:.4f}")
     logger.info(f"  MRR: {test_lp_metrics['MRR']:.4f}")
+    
+    # =============================================================
+    # EARLY SAVE: Link Prediction results (before slow ranking eval)
+    # This ensures we have results even if ranking eval gets interrupted
+    # =============================================================
+    early_results = {
+        'best_epoch': best_epoch,
+        'best_val_ap': float(best_val_ap),
+        'test': {
+            'overall': test_lp_metrics,
+        },
+        'args': vars(args),
+        'status': 'link_prediction_complete'
+    }
+    with open(save_dir / "results_partial.json", "w") as f:
+        json.dump(early_results, f, indent=2)
+    logger.info(f"💾 Saved partial results to {save_dir / 'results_partial.json'}")
     
     # Ranking metrics
     if args.eval_ranking:

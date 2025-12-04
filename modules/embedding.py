@@ -55,6 +55,171 @@ class MultimodalProjector(nn.Module):
         return self.proj(x)
 
 
+# =============================================================================
+# MULTIMODAL FUSION MODULES (ABLATION STUDY)
+# =============================================================================
+
+class MultimodalFiLMFusion(nn.Module):
+    """
+    FiLM-based fusion for multimodal features (text + image).
+    
+    Text features modulate image features via learned scale (γ) and shift (β):
+        output = γ(text) ⊙ image + β(text)
+    
+    This allows the text semantics to adaptively weight visual features.
+    
+    Args:
+        text_dim: Dimension of text features (e.g., 1536 for Qwen2)
+        image_dim: Dimension of image features (e.g., 1152 for SigLIP)
+        output_dim: Target dimension (e.g., 172 for TGN)
+        dropout: Dropout rate
+    """
+    def __init__(
+        self,
+        text_dim: int,
+        image_dim: int,
+        output_dim: int,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        
+        self.text_dim = text_dim
+        self.image_dim = image_dim
+        self.output_dim = output_dim
+        
+        # Project image to output dimension first
+        self.image_proj = nn.Sequential(
+            nn.Linear(image_dim, output_dim),
+            nn.LayerNorm(output_dim)
+        )
+        
+        # FiLM generators: text → γ and β
+        hidden_dim = max(output_dim, 256)
+        
+        self.gamma_net = nn.Sequential(
+            nn.Linear(text_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+        
+        self.beta_net = nn.Sequential(
+            nn.Linear(text_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+        
+        # Final layer norm and dropout
+        self.layer_norm = nn.LayerNorm(output_dim)
+        self.dropout = nn.Dropout(dropout)
+        
+        # Initialize FiLM to identity: γ=1, β=0
+        nn.init.zeros_(self.gamma_net[-1].weight)
+        nn.init.ones_(self.gamma_net[-1].bias)
+        nn.init.zeros_(self.beta_net[-1].weight)
+        nn.init.zeros_(self.beta_net[-1].bias)
+    
+    def forward(self, text_feat: torch.Tensor, image_feat: torch.Tensor) -> torch.Tensor:
+        """
+        Apply FiLM fusion.
+        
+        Args:
+            text_feat: [batch, text_dim] - Text embeddings
+            image_feat: [batch, image_dim] - Image embeddings
+            
+        Returns:
+            [batch, output_dim] - Fused and projected features
+        """
+        # Project image to output dim
+        image_proj = self.image_proj(image_feat)
+        
+        # Generate modulation parameters from text
+        gamma = self.gamma_net(text_feat)
+        beta = self.beta_net(text_feat)
+        
+        # Apply FiLM: γ ⊙ image + β
+        fused = gamma * image_proj + beta
+        
+        # Apply normalization and dropout
+        return self.dropout(self.layer_norm(fused))
+
+
+class MultimodalGatedFusion(nn.Module):
+    """
+    Gated fusion for multimodal features (text + image).
+    
+    Uses learned attention weights to combine text and image:
+        gate = σ(W_g · [text; image])
+        output = gate ⊙ proj(text) + (1-gate) ⊙ proj(image)
+    
+    Args:
+        text_dim: Dimension of text features
+        image_dim: Dimension of image features
+        output_dim: Target dimension
+        dropout: Dropout rate
+    """
+    def __init__(
+        self,
+        text_dim: int,
+        image_dim: int,
+        output_dim: int,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        
+        self.text_dim = text_dim
+        self.image_dim = image_dim
+        self.output_dim = output_dim
+        
+        # Project each modality to output dimension
+        self.text_proj = nn.Sequential(
+            nn.Linear(text_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.GELU()
+        )
+        
+        self.image_proj = nn.Sequential(
+            nn.Linear(image_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.GELU()
+        )
+        
+        # Gating network
+        self.gate = nn.Sequential(
+            nn.Linear(text_dim + image_dim, output_dim),
+            nn.Sigmoid()
+        )
+        
+        # Final projection
+        self.out_proj = nn.Sequential(
+            nn.Linear(output_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.Dropout(dropout)
+        )
+    
+    def forward(self, text_feat: torch.Tensor, image_feat: torch.Tensor) -> torch.Tensor:
+        """
+        Apply gated fusion.
+        
+        Args:
+            text_feat: [batch, text_dim]
+            image_feat: [batch, image_dim]
+            
+        Returns:
+            [batch, output_dim]
+        """
+        # Project each modality
+        text_proj = self.text_proj(text_feat)
+        image_proj = self.image_proj(image_feat)
+        
+        # Compute gate from concatenated features
+        gate = self.gate(torch.cat([text_feat, image_feat], dim=-1))
+        
+        # Gated combination
+        fused = gate * text_proj + (1 - gate) * image_proj
+        
+        return self.out_proj(fused)
+
+
 class HybridNodeFeatures(nn.Module):
     """
     Unified node feature provider for MM-TGN.
@@ -74,6 +239,9 @@ class HybridNodeFeatures(nn.Module):
         freeze_items: Whether to freeze item features (recommended: True)
         use_random_items: If True, use learnable random embeddings for items
                           instead of SOTA features (ablation study baseline)
+        mm_fusion_mode: Multimodal fusion strategy ('mlp', 'film', 'gated')
+        text_dim: Dimension of text features (needed for film/gated fusion)
+                  If None, defaults to 1536 (Qwen2 dimension)
     """
     def __init__(
         self,
@@ -83,7 +251,9 @@ class HybridNodeFeatures(nn.Module):
         embedding_dim: int,
         dropout: float = 0.1,
         freeze_items: bool = True,
-        use_random_items: bool = False  # Ablation: vanilla baseline
+        use_random_items: bool = False,  # Ablation: vanilla baseline
+        mm_fusion_mode: str = "mlp",     # NEW: Fusion mode ablation
+        text_dim: Optional[int] = None   # NEW: Text dimension for fusion split
     ):
         super().__init__()
         
@@ -91,6 +261,7 @@ class HybridNodeFeatures(nn.Module):
         self.num_items = num_items
         self.embedding_dim = embedding_dim
         self.use_random_items = use_random_items
+        self.mm_fusion_mode = mm_fusion_mode
         # Total includes padding at index 0
         self.total_nodes = num_users + num_items + 1
         
@@ -127,6 +298,8 @@ class HybridNodeFeatures(nn.Module):
             # No projector or raw features needed
             self.item_projector = None
             self.item_features_raw = None
+            self.text_dim = None
+            self.image_dim = None
         else:
             # SOTA MODE: Project pre-computed multimodal features
             assert item_features is not None, \
@@ -138,12 +311,60 @@ class HybridNodeFeatures(nn.Module):
                 torch.from_numpy(item_features.astype(np.float32))
             )
             
-            # Projector: SOTA dim -> TGN dim
-            self.item_projector = MultimodalProjector(
-                input_dim=item_feat_dim,
-                output_dim=embedding_dim,
-                dropout=dropout
-            )
+            # Determine text/image split dimensions
+            # Default text_dim based on common encoder configurations
+            if text_dim is None:
+                # Auto-detect based on total dimension
+                if item_feat_dim == 2688:  # SOTA: Qwen2 (1536) + SigLIP (1152)
+                    text_dim = 1536
+                elif item_feat_dim == 1536:  # Baseline: MiniLM (768) + CLIP (768)
+                    text_dim = 768
+                elif item_feat_dim == 2048:  # ImageBind: 1024 + 1024
+                    text_dim = 1024
+                else:
+                    # Default: assume equal split
+                    text_dim = item_feat_dim // 2
+            
+            self.text_dim = text_dim
+            self.image_dim = item_feat_dim - text_dim
+            
+            # =================================================================
+            # MULTIMODAL FUSION (Ablation: MLP vs FiLM vs Gated)
+            # =================================================================
+            
+            if mm_fusion_mode == "mlp":
+                # DEFAULT: Simple MLP projection of concatenated features
+                self.item_projector = MultimodalProjector(
+                    input_dim=item_feat_dim,
+                    output_dim=embedding_dim,
+                    dropout=dropout
+                )
+                self.film_fusion = None
+                self.gated_fusion = None
+                
+            elif mm_fusion_mode == "film":
+                # FiLM FUSION: Text modulates image via γ⊙x + β
+                self.item_projector = None  # No simple projector
+                self.film_fusion = MultimodalFiLMFusion(
+                    text_dim=self.text_dim,
+                    image_dim=self.image_dim,
+                    output_dim=embedding_dim,
+                    dropout=dropout
+                )
+                self.gated_fusion = None
+                
+            elif mm_fusion_mode == "gated":
+                # GATED FUSION: Learned attention weights for text vs image
+                self.item_projector = None
+                self.film_fusion = None
+                self.gated_fusion = MultimodalGatedFusion(
+                    text_dim=self.text_dim,
+                    image_dim=self.image_dim,
+                    output_dim=embedding_dim,
+                    dropout=dropout
+                )
+            else:
+                raise ValueError(f"Unknown mm_fusion_mode: {mm_fusion_mode}")
             
             if freeze_items:
                 # Freeze the raw features (projector remains trainable)
@@ -164,6 +385,11 @@ class HybridNodeFeatures(nn.Module):
         """
         Get item features (either projected SOTA or random learnable).
         Uses cache if valid (SOTA mode only).
+        
+        Handles different fusion modes:
+        - mlp: Simple MLP projection of concatenated [text; image]
+        - film: FiLM fusion where text modulates image
+        - gated: Gated fusion with learned attention weights
         """
         if self.use_random_items:
             # Random mode: return learnable embeddings directly
@@ -171,7 +397,24 @@ class HybridNodeFeatures(nn.Module):
         else:
             # SOTA mode: return projected features (cached)
             if not self._cache_valid or self._projected_items_cache is None:
-                self._projected_items_cache = self.item_projector(self.item_features_raw)
+                raw_features = self.item_features_raw
+                
+                if self.mm_fusion_mode == "mlp":
+                    # MLP: project concatenated features
+                    self._projected_items_cache = self.item_projector(raw_features)
+                    
+                elif self.mm_fusion_mode == "film":
+                    # FiLM: split into text/image, apply FiLM fusion
+                    text_feat = raw_features[:, :self.text_dim]
+                    image_feat = raw_features[:, self.text_dim:]
+                    self._projected_items_cache = self.film_fusion(text_feat, image_feat)
+                    
+                elif self.mm_fusion_mode == "gated":
+                    # Gated: split into text/image, apply gated fusion
+                    text_feat = raw_features[:, :self.text_dim]
+                    image_feat = raw_features[:, self.text_dim:]
+                    self._projected_items_cache = self.gated_fusion(text_feat, image_feat)
+                
                 self._cache_valid = True
             return self._projected_items_cache
     

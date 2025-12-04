@@ -1,25 +1,111 @@
 # MM-TGN: Multimodal Temporal Graph Network
 ## Complete Architecture & API Documentation
 
-**Version**: 2.1 (Critical Bug Fixes)  
-**Last Updated**: December 3, 2025  
+**Version**: 2.3 (SLURM Jobs & MM-Fusion Ablation)  
+**Last Updated**: December 4, 2025  
 **Research Goal**: Solve Cold Start and Concept Drift in Recommendation Systems  
 **Environment**: Great Lakes HPC (University of Michigan)
+
+> 📖 **See also**: [README.md](README.md) for quick start guide and high-level overview.
+> This document contains detailed technical specifications for developers and researchers.
 
 ---
 
 ## Table of Contents
-1. [Research Hypothesis](#-research-hypothesis)
-2. [System Architecture](#️-system-architecture-diagram)
-3. [Indexing Standard](#-indexing-standard-critical)
-4. [Complete CLI Reference](#-complete-cli-reference)
-5. [Ready-to-Run Ablation Commands](#-ready-to-run-ablation-commands)
-6. [Data Format Specifications](#-data-format-specifications)
-7. [Core API Documentation](#-core-api-documentation)
-8. [TensorBoard Setup](#-tensorboard-setup-great-lakes-hpc)
-9. [File Dictionary](#-file-dictionary)
-10. [Known Issues & Solutions](#-known-issues--solutions)
-11. [Context Restoration](#-context-restoration-checklist)
+1. [Evaluation Protocol](#-evaluation-protocol-for-baseline-alignment)
+2. [Research Hypothesis](#-research-hypothesis)
+3. [System Architecture](#️-system-architecture-diagram)
+4. [Indexing Standard](#-indexing-standard-critical)
+5. [Complete CLI Reference](#-complete-cli-reference)
+6. [SLURM Job Scripts](#-slurm-job-scripts)
+7. [Ready-to-Run Ablation Commands](#-ready-to-run-ablation-commands)
+8. [Data Format Specifications](#-data-format-specifications)
+9. [Core API Documentation](#-core-api-documentation)
+10. [TensorBoard Setup](#-tensorboard-setup-great-lakes-hpc)
+11. [File Dictionary](#-file-dictionary)
+12. [Known Issues & Solutions](#-known-issues--solutions)
+13. [Context Restoration](#-context-restoration-checklist)
+
+---
+
+## 📊 Evaluation Protocol (FOR BASELINE ALIGNMENT)
+
+> **⚠️ CRITICAL FOR TEAMMATES**: Use these exact settings for fair comparison with baselines.
+
+### Data Split Configuration
+
+```python
+# Code location: dataset.py, lines 65-66, 202-224
+
+SPLIT_TYPE = "CHRONOLOGICAL"  # NOT random!
+TRAIN_RATIO = 0.70            # 70% oldest interactions
+VAL_RATIO = 0.15              # 15% middle interactions  
+TEST_RATIO = 0.15             # 15% newest interactions
+```
+
+**Why Chronological (not Random)?**
+1. TGN's memory mechanism requires temporal order
+2. Prevents future data leakage
+3. Naturally creates cold-start scenarios for inductive evaluation
+4. Standard in temporal graph learning literature
+
+### Ranking Evaluation Strategy
+
+```python
+# Code location: train_mmtgn.py, lines 344-480
+
+RANKING_STRATEGY = "NEGATIVE_SAMPLING"  # NOT full ranking
+N_NEGATIVES = 100                        # Default: rank positive among 100 negatives
+```
+
+**Evaluation Process:**
+1. For each test edge (user_i, item_j):
+2. Sample 100 random negative items (excluding item_j)
+3. Compute scores for positive and all negatives
+4. Rank positive among 101 candidates
+5. Compute Recall@K, NDCG@K based on rank
+
+**NOT Full Ranking** (ranking against all ~22K items) - too slow for TGN.
+
+### Metrics Computed
+
+| Metric | Formula | Code Location |
+|--------|---------|---------------|
+| Recall@K | hits(rank ≤ K) / N | `utils/metrics.py:57-89` |
+| NDCG@K | Σ(1/log2(rank+1)) / N | `utils/metrics.py:92-130` |
+| MRR | Σ(1/rank) / N | `utils/metrics.py:133-160` |
+| AUC | P(pos > neg) | `utils/metrics.py:182-215` |
+| AP | Same as MRR for single positive | `utils/metrics.py:218-235` |
+
+### Evaluation Splits
+
+| Split | Description | Purpose |
+|-------|-------------|---------|
+| **Overall** | All test interactions | General performance |
+| **Transductive** | Both nodes seen in training | Warm-start |
+| **Inductive** | ≥1 new node | **Cold-start (key metric!)** |
+
+### Results Storage
+
+```
+checkpoints/<run_name>/
+├── best_model.pt           # Best model checkpoint
+├── train.log               # Full training log
+├── results_partial.json    # Link prediction results (saved early)
+└── results.json            # All metrics (saved at end)
+```
+
+### Baseline Alignment Checklist
+
+```python
+# Ensure your baseline uses:
+assert split_type == "chronological"
+assert train_ratio == 0.70
+assert val_ratio == 0.15
+assert test_ratio == 0.15
+assert n_negatives == 100
+assert metrics == ["Recall@10", "Recall@20", "NDCG@10", "NDCG@20", "MRR"]
+```
 
 ---
 
@@ -183,12 +269,20 @@ Item (last)  → Index 32,169
 |----------|------|---------|---------|-------------|
 | `--node-feature-type` | `str` | `sota` | `sota`, `baseline`, `random` | **Experiment A**: Feature source |
 | `--input-feat-dim` | `str` | `auto` | `auto`, `<int>` | **Experiment B**: Override feature dimension |
-| `--fusion-mode` | `str` | `film` | `film`, `concat`, `none` | **Experiment C**: Fusion strategy |
+| `--fusion-mode` | `str` | `film` | `film`, `concat`, `none` | **Experiment C**: TGN+Channel2 fusion (bypass if no Ch2) |
+| `--mm-fusion` | `str` | `mlp` | `mlp`, `film`, `gated` | **Experiment D**: Multimodal fusion (text + image) |
 
 **Ablation Details:**
+
+**Feature Source (`--node-feature-type`):**
 - `sota`: Qwen2-1.5B + SigLIP-SO400M (2688-dim) - **Our method**
 - `baseline`: MiniLM + CLIP (1536-dim) - **Comparison baseline**
 - `random`: Learnable `nn.Embedding` (172-dim) - **Lower bound, no content**
+
+**Multimodal Fusion (`--mm-fusion`):**
+- `mlp`: Simple 2-layer MLP projection (default)
+- `film`: FiLM conditioning - text modulates image: `γ(text) ⊙ img + β(text)`
+- `gated`: Gated fusion - learned attention: `g ⊙ text + (1-g) ⊙ image`
 
 ### Evaluation Arguments
 
@@ -221,6 +315,53 @@ Item (last)  → Index 32,169
 | `--seed` | `int` | `42` | Random seed for reproducibility |
 | `--device` | `str` | `cuda` | Device: `cuda` or `cpu` |
 | `--num-workers` | `int` | `0` | DataLoader workers (keep 0 for TGN) |
+
+---
+
+## 📦 SLURM Job Scripts
+
+Pre-configured job scripts are available in `jobs/` for easy submission:
+
+### Quick Reference
+
+| Script | Purpose | Time |
+|--------|---------|------|
+| `smoke_test.sh` | Quick verification (~5K samples) | 30 min |
+| `train_ml_vanilla.sh` | Vanilla baseline (random features) | 6 hours |
+| `train_ml_sota.sh` | SOTA + MLP fusion | 8 hours |
+| `train_ml_sota_film.sh` | SOTA + FiLM fusion | 8 hours |
+| `train_ml_sota_gated.sh` | SOTA + Gated fusion | 8 hours |
+| `submit_all_ml.sh` | Submit ALL ablation experiments | - |
+
+### Usage
+
+```bash
+# Single experiment
+sbatch jobs/train_ml_sota.sh
+
+# All ablations at once (4 jobs)
+./jobs/submit_all_ml.sh
+
+# Monitor
+squeue -u $USER
+tail -f logs/train_ml_*.out
+```
+
+### Job Output
+
+```
+logs/
+├── train_ml_vanilla_<jobid>.out    # Vanilla training output
+├── train_ml_sota_<jobid>.out       # SOTA+MLP output
+├── train_ml_sota_film_<jobid>.out  # SOTA+FiLM output
+└── train_ml_sota_gated_<jobid>.out # SOTA+Gated output
+
+checkpoints/
+├── ml_vanilla_<date>/results.json  # Vanilla results
+├── ml_sota_mlp_<date>/results.json # SOTA+MLP results
+├── ml_sota_film_<date>/results.json
+└── ml_sota_gated_<date>/results.json
+```
 
 ---
 
@@ -936,6 +1077,40 @@ python train_mmtgn.py --data-dir data/processed --dataset ml-modern --epochs 1
 ---
 
 ## 📝 Changelog
+
+### 2025-12-04 (v2.3) - SLURM Jobs & MM-Fusion Ablation
+- **📦 NEW: SLURM Job Scripts** (`jobs/` folder)
+  - `smoke_test.sh` - Quick verification
+  - `train_ml_vanilla.sh` - Vanilla baseline
+  - `train_ml_sota.sh` - SOTA + MLP fusion
+  - `train_ml_sota_film.sh` - SOTA + FiLM fusion
+  - `train_ml_sota_gated.sh` - SOTA + Gated fusion
+  - `submit_all_ml.sh` - Submit all experiments at once
+- **🔬 NEW: `--mm-fusion` CLI argument**
+  - `mlp`: Simple 2-layer MLP projection (default)
+  - `film`: FiLM conditioning (text modulates image)
+  - `gated`: Gated fusion (learned attention weights)
+- **📊 Confirmed 3-Group Evaluation** (train_mmtgn.py)
+  - Overall: All test interactions
+  - Transductive: Users seen in training (fair comparison with LOO)
+  - Inductive: Cold-start users (MM-TGN advantage)
+- **📚 Updated README.md & ARCHITECTURE.md**
+  - Added jobs folder documentation
+  - Added mm-fusion ablation commands
+  - Updated CLI reference
+
+### 2025-12-04 (v2.2) - Evaluation Protocol Documentation
+- **📊 NEW: Evaluation Protocol Section**
+  - Documented exact split ratios (70/15/15 chronological)
+  - Documented ranking strategy (100 negatives per positive)
+  - Added baseline alignment checklist for teammates
+- **💾 NEW: Early Results Saving**
+  - Added `results_partial.json` saved before slow ranking evaluation
+  - Prevents losing results if ranking eval is interrupted
+- **📚 Updated README.md**
+  - Made complementary to ARCHITECTURE.md (high-level vs technical)
+  - Added evaluation protocol summary for teammates
+  - Added project structure overview
 
 ### 2025-12-03 (v2.1) - Critical Bug Fixes
 - **🐛 CRITICAL FIX: Memory Assertion Error**

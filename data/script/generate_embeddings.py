@@ -279,19 +279,46 @@ def main():
         if price.lower() not in ('nan', '') and price != '0':
             extras.append(f"Price: ${price}")
 
-        # 5. MAIN DESCRIPTION
-        plot = str(row.get(args.text_col, ''))
-        if plot.lower() == 'nan': plot = ''
+        # 5. MAIN DESCRIPTION/TEXT
+        main_text = str(row.get(args.text_col, ''))
+        if main_text.lower() == 'nan': main_text = ''
+        
+        # ================================================================
+        # SMART TEXT HANDLING FOR MINIMAL AMAZON DATA
+        # If we only have the main text field (no title, categories, etc.)
+        # treat the text as the product name/title for better embeddings
+        # ================================================================
+        has_metadata = bool(title or year or cats or extras)
         
         # CONSTRUCT PROMPT
         parts = []
-        if title: parts.append(f"Title: {title}")
-        if year: parts.append(f"Year: {year}")
-        if cats: parts.append(f"Categories: {cats}")
-        parts.extend(extras)
-        if plot: parts.append(f"Description: {plot}")
         
-        return ". ".join(parts)
+        if has_metadata:
+            # Rich metadata available (MovieLens, enriched Amazon, etc.)
+            if title: parts.append(f"Title: {title}")
+            if year: parts.append(f"Year: {year}")
+            if cats: parts.append(f"Categories: {cats}")
+            parts.extend(extras)
+            if main_text: parts.append(f"Description: {main_text}")
+        else:
+            # Minimal data (Amazon raw_text only) - treat as product info
+            # The raw_text is typically: "Product Name - Category" or just product name
+            if main_text:
+                # Try to extract category hints from hyphen-separated parts
+                # e.g., "BenchMaster Pocket Guide - Fly Fishing - Fishing"
+                if ' - ' in main_text:
+                    text_parts = [p.strip() for p in main_text.split(' - ')]
+                    product_name = text_parts[0]
+                    potential_cats = text_parts[1:] if len(text_parts) > 1 else []
+                    
+                    parts.append(f"Product: {product_name}")
+                    if potential_cats:
+                        parts.append(f"Category: {', '.join(potential_cats)}")
+                else:
+                    # Plain product name
+                    parts.append(f"Product: {main_text}")
+        
+        return ". ".join(parts) if parts else "Unknown product"
 
     texts = df.apply(create_rich_text, axis=1).tolist()
     ids = df[args.id_col].astype(str).tolist()
