@@ -295,12 +295,18 @@ class MMTGN(nn.Module):
         )
     
     def update_node_features(self):
-        """Update node feature tensor from hybrid features (call each forward)."""
+        """Update node feature tensor from hybrid features (call each forward).
+        
+        CRITICAL: We must NOT use .data.copy_() as it breaks the computation graph.
+        Instead, we directly assign the new features tensor, which preserves gradients
+        for learnable embeddings (e.g., random item embeddings in ablation mode).
+        """
         if self.hybrid_features is not None:
             self.hybrid_features.invalidate_cache()
             all_features = self.hybrid_features.get_all_features()
-            self.node_raw_features.data.copy_(all_features)
-            self.embedding_module.node_features = self.node_raw_features
+            # FIXED: Direct assignment preserves gradient flow for learnable embeddings
+            # Previously used .data.copy_() which broke gradients for random item embeddings
+            self.embedding_module.node_features = all_features
     
     def compute_temporal_embeddings(
         self,
@@ -310,10 +316,16 @@ class MMTGN(nn.Module):
         edge_times: np.ndarray,
         edge_idxs: np.ndarray,
         n_neighbors: int = 20,
-        structural_embeddings: Optional[torch.Tensor] = None
+        structural_embeddings: Optional[torch.Tensor] = None,
+        skip_memory_update: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute temporal embeddings for sources, destinations, and negatives.
+        
+        Args:
+            skip_memory_update: If True, skip memory update step. Use for
+                               negative scoring in evaluation to avoid 
+                               "update memory to time in past" errors.
         
         Returns:
             Tuple of (source_emb, dest_emb, neg_emb)
@@ -378,8 +390,8 @@ class MMTGN(nn.Module):
         destination_node_embedding = node_embedding[n_samples:2*n_samples]
         negative_node_embedding = node_embedding[2*n_samples:]
         
-        # Update memory
-        if self.use_memory:
+        # Update memory (skip if evaluating negatives to avoid timestamp conflicts)
+        if self.use_memory and not skip_memory_update:
             if self.memory_update_at_start:
                 self.update_memory(positives, self.memory.messages)
                 
@@ -426,10 +438,15 @@ class MMTGN(nn.Module):
         edge_times: np.ndarray,
         edge_idxs: np.ndarray,
         n_neighbors: int = 20,
-        structural_embeddings: Optional[torch.Tensor] = None
+        structural_embeddings: Optional[torch.Tensor] = None,
+        skip_memory_update: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Compute link probabilities for positive and negative edges.
+        
+        Args:
+            skip_memory_update: If True, skip memory update. Use for negative
+                               scoring in evaluation to avoid timestamp conflicts.
         
         Returns:
             (pos_probs, neg_probs) both of shape [batch_size]
@@ -439,7 +456,8 @@ class MMTGN(nn.Module):
         source_emb, dest_emb, neg_emb = self.compute_temporal_embeddings(
             source_nodes, destination_nodes, negative_nodes,
             edge_times, edge_idxs, n_neighbors,
-            structural_embeddings
+            structural_embeddings,
+            skip_memory_update=skip_memory_update
         )
         
         score = self.affinity_score(

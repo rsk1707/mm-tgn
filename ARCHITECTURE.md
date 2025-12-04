@@ -1,7 +1,7 @@
 # MM-TGN: Multimodal Temporal Graph Network
 ## Complete Architecture & API Documentation
 
-**Version**: 2.0  
+**Version**: 2.1 (Critical Bug Fixes)  
 **Last Updated**: December 3, 2025  
 **Research Goal**: Solve Cold Start and Concept Drift in Recommendation Systems  
 **Environment**: Great Lakes HPC (University of Michigan)
@@ -197,6 +197,14 @@ Item (last)  → Index 32,169
 | `--eval-ranking` | `flag` | `True` | Compute Recall@K, NDCG@K, MRR |
 | `--no-eval-ranking` | `flag` | - | Skip ranking metrics (faster) |
 | `--n-neg-eval` | `int` | `100` | Number of negatives per positive for ranking |
+| `--eval-sample-size` | `int` | `None` | Subsample test set for faster ranking eval (e.g., `10000`). Use `None` for full evaluation (paper results). |
+
+**Evaluation Speed Guide:**
+| Mode | `--eval-sample-size` | `--n-neg-eval` | Est. Time |
+|------|---------------------|----------------|-----------|
+| **Development** | `10000` | `20` | ~3-5 min |
+| **Validation** | `30000` | `50` | ~30 min |
+| **Paper Results** | `None` (full) | `100` | ~6-8 hours |
 
 ### Logging Arguments
 
@@ -232,7 +240,21 @@ conda activate mmtgn
 cd /scratch/cse576f25s001_class_root/cse576f25s001_class/huseynli/mm-tgn
 ```
 
-### Experiment 0: Smoke Test (1 Epoch - Verify Setup)
+### Experiment 0a: Quick Smoke Test (FAST - 5 min)
+
+```bash
+python train_mmtgn.py \
+    --data-dir data/processed \
+    --dataset ml-modern \
+    --epochs 1 \
+    --eval-ranking \
+    --n-neg-eval 20 \
+    --eval-sample-size 10000 \
+    --run-name "smoke_test_fast"
+```
+**Expected**: ~5 min, verifies code runs without errors
+
+### Experiment 0b: Full Smoke Test (1 Epoch - Full Evaluation)
 
 ```bash
 python train_mmtgn.py \
@@ -247,14 +269,30 @@ python train_mmtgn.py \
     --loss bce \
     --eval-ranking \
     --n-neg-eval 100 \
-    --run-name "smoke_test"
+    --run-name "smoke_test_full"
 ```
-**Expected**: ~25 min, Loss ~1.2-1.5, AP ~0.75-0.80
+**Expected**: ~25 min, Loss ~0.5-0.6, AP ~0.75-0.80
 
 ---
 
 ### Experiment A: Vanilla Baseline (Random Features - LOWER BOUND)
 
+**Quick Test (verify vanilla learns after bug fix):**
+```bash
+python train_mmtgn.py \
+    --data-dir data/processed \
+    --dataset ml-modern \
+    --node-feature-type random \
+    --fusion-mode none \
+    --epochs 5 \
+    --eval-ranking \
+    --n-neg-eval 20 \
+    --eval-sample-size 10000 \
+    --run-name "vanilla_quick_test"
+```
+**Expected after fix**: Val AP should INCREASE (not stay at ~0.47). Target: AP > 0.55 by epoch 5.
+
+**Full Experiment:**
 ```bash
 python train_mmtgn.py \
     --data-dir data/processed \
@@ -279,6 +317,21 @@ python train_mmtgn.py \
 
 ### Experiment B1: SOTA Features (Our Full Method)
 
+**Quick Test (verify ranking eval works after memory fix):**
+```bash
+python train_mmtgn.py \
+    --data-dir data/processed \
+    --dataset ml-modern \
+    --node-feature-type sota \
+    --epochs 1 \
+    --eval-ranking \
+    --n-neg-eval 20 \
+    --eval-sample-size 10000 \
+    --run-name "sota_ranking_test"
+```
+**Expected after fix**: Ranking evaluation should complete without "memory to time in past" error.
+
+**Full Experiment:**
 ```bash
 python train_mmtgn.py \
     --data-dir data/processed \
@@ -517,10 +570,16 @@ class MMTGN(nn.Module):
         edge_times: np.ndarray,
         edge_idxs: np.ndarray,
         n_neighbors: int = 20,
-        structural_embeddings: Optional[torch.Tensor] = None
+        structural_embeddings: Optional[torch.Tensor] = None,
+        skip_memory_update: bool = False  # NEW: For evaluation
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute temporal embeddings for a batch.
+        
+        Args:
+            skip_memory_update: If True, skip memory update step. Use for
+                               negative scoring in evaluation to avoid 
+                               "update memory to time in past" errors.
         
         Returns:
             (source_emb, dest_emb, neg_emb) - All shape [batch, embedding_dim]
@@ -533,10 +592,15 @@ class MMTGN(nn.Module):
         negative_nodes: np.ndarray,
         edge_times: np.ndarray,
         edge_idxs: np.ndarray,
-        n_neighbors: int = 20
+        n_neighbors: int = 20,
+        skip_memory_update: bool = False  # NEW: For evaluation
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Compute link probabilities.
+        
+        Args:
+            skip_memory_update: If True, skip memory update. Use for negative
+                               scoring in evaluation to avoid timestamp conflicts.
         
         Returns:
             (pos_probs, neg_probs) - Both shape [batch]
@@ -777,27 +841,61 @@ Open: **http://localhost:6006**
 | `torch.load` WeightsOnly error (PyTorch 2.6) | Use `weights_only=False` | ✅ Fixed |
 | `ReduceLROnPlateau` verbose parameter | Remove `verbose=True` | ✅ Fixed |
 | TensorBoard IPv6 binding error | Use `--host=0.0.0.0` | ✅ Fixed |
+| Memory assertion "update to time in past" | Added `skip_memory_update=True` for negative scoring | ✅ Fixed |
+| Vanilla model not learning (AP ≈ 0.47) | Fixed gradient flow: use direct assignment instead of `.data.copy_()` | ✅ Fixed |
 | Gradient warning (non-leaf tensor) | Harmless, ignore | ⚠️ Cosmetic |
 | PyG extension warnings | Fallback works | ⚠️ Non-blocking |
+
+### Critical Bug Details
+
+**Bug 1: Memory Update Assertion Error**
+```
+AssertionError: Trying to update memory to time in the past
+```
+- **Cause**: Negative scoring in `evaluate_ranking` used repeated timestamps
+- **Fix**: Added `skip_memory_update=True` parameter to skip memory updates when scoring negatives
+- **Location**: `mmtgn.py` (`compute_edge_probabilities`, `compute_temporal_embeddings`)
+
+**Bug 2: Vanilla Model Not Learning**
+- **Symptom**: Val AP stayed at ~0.47 (below random 0.5) for all epochs
+- **Cause**: `.data.copy_()` broke gradient flow to learnable item embeddings
+- **Fix**: Changed to direct tensor assignment in `update_node_features()`
+- **Location**: `mmtgn.py` line ~302
+
+```python
+# BEFORE (broken - no gradients flow):
+self.node_raw_features.data.copy_(all_features)
+
+# AFTER (fixed - gradients preserved):
+self.embedding_module.node_features = all_features
+```
 
 ---
 
 ## 📊 Expected Metrics
 
 ### Smoke Test (1 Epoch)
-| Metric | Expected | Notes |
-|--------|----------|-------|
-| Train Loss | 1.2 - 1.5 | Should decrease |
-| Val AP | 0.70 - 0.80 | Better than 0.5 |
-| Val AUC | 0.70 - 0.80 | Better than 0.5 |
-| Time | ~25 min | On 1 GPU |
+| Metric | SOTA Expected | Vanilla Expected | Notes |
+|--------|---------------|------------------|-------|
+| Train Loss | 0.5 - 0.7 | 0.6 - 0.7 | Should decrease |
+| Val AP | 0.75 - 0.85 | 0.55 - 0.70 | Better than 0.5 |
+| Val AUC | 0.75 - 0.85 | 0.55 - 0.70 | Better than 0.5 |
+| Time | ~25 min | ~20 min | On 1 GPU |
 
 ### Full Training (50 Epochs)
-| Metric | Transductive | Inductive | Notes |
-|--------|--------------|-----------|-------|
-| Recall@10 | > 0.05 | > 0.02 | Higher = better |
-| NDCG@10 | > 0.03 | > 0.01 | Higher = better |
-| MRR | > 0.10 | > 0.05 | Higher = better |
+| Metric | SOTA Transductive | SOTA Inductive | Vanilla | Notes |
+|--------|-------------------|----------------|---------|-------|
+| Test AP | > 0.85 | > 0.80 | > 0.60 | SOTA >> Vanilla = success |
+| Test AUC | > 0.85 | > 0.80 | > 0.60 | |
+| Recall@10 | > 0.05 | > 0.02 | > 0.01 | Higher = better |
+| NDCG@10 | > 0.03 | > 0.01 | > 0.01 | Higher = better |
+
+### Key Comparisons (Research Validation)
+| Comparison | Expected Outcome | What It Proves |
+|------------|------------------|----------------|
+| SOTA AP > Vanilla AP | +0.15 to +0.25 | Multimodal features help |
+| SOTA Inductive > Vanilla Inductive | Larger gap | Cold-start hypothesis |
+| SOTA > Baseline | +0.05 to +0.10 | Better encoders matter |
 
 ---
 
@@ -838,6 +936,19 @@ python train_mmtgn.py --data-dir data/processed --dataset ml-modern --epochs 1
 ---
 
 ## 📝 Changelog
+
+### 2025-12-03 (v2.1) - Critical Bug Fixes
+- **🐛 CRITICAL FIX: Memory Assertion Error**
+  - Added `skip_memory_update` parameter to `compute_edge_probabilities()` and `compute_temporal_embeddings()`
+  - Fixes `AssertionError: Trying to update memory to time in the past` during ranking evaluation
+- **🐛 CRITICAL FIX: Vanilla Model Not Learning**
+  - Fixed gradient flow for random item embeddings
+  - Changed `.data.copy_()` to direct tensor assignment in `update_node_features()`
+  - Vanilla model now learns properly (AP should improve from ~0.47)
+- **⚡ NEW: `--eval-sample-size` argument**
+  - Subsample test set for faster ranking evaluation during development
+  - Use `--eval-sample-size 10000 --n-neg-eval 20` for ~75x faster evaluation
+- **📚 Updated API documentation** with new parameters
 
 ### 2025-12-03 (v2.0)
 - **Complete CLI Reference**: All arguments with types, defaults, descriptions

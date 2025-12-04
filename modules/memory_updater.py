@@ -66,7 +66,7 @@ class LSTMMemoryUpdater(SequenceMemoryUpdater):
     # Note: LSTMCell requires both hidden (h) and cell (c) states
     # For TGN, we use GRU which only needs hidden state. LSTM support is experimental.
     self.memory_updater = nn.LSTMCell(input_size=message_dimension,
-                                      hidden_size=memory_dimension)
+                                     hidden_size=memory_dimension)
     self.cell_state = None  # Will be initialized in update_memory
   
   def update_memory(self, unique_node_ids, unique_messages, timestamps):

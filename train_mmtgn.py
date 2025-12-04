@@ -141,6 +141,9 @@ def get_args():
                         help="Number of negatives for ranking evaluation")
     parser.add_argument("--eval-ranking", action="store_true", default=True,
                         help="Compute ranking metrics (Recall@K, NDCG@K)")
+    parser.add_argument("--eval-sample-size", type=int, default=None,
+                        help="Subsample test set for faster ranking eval (e.g., 10000). "
+                             "Use None for full evaluation (paper results).")
     parser.add_argument("--no-eval-ranking", action="store_false", dest="eval_ranking",
                         help="Skip ranking metrics (faster)")
     
@@ -329,8 +332,8 @@ def evaluate_link_prediction(
             timestamps, edge_idxs, n_neighbors
         )
         
-        all_pos_probs.append(pos_prob.cpu().numpy())
-        all_neg_probs.append(neg_prob.cpu().numpy())
+        all_pos_probs.append(pos_prob.squeeze().cpu().numpy())
+        all_neg_probs.append(neg_prob.squeeze().cpu().numpy())
     
     pos_probs = np.concatenate(all_pos_probs)
     neg_probs = np.concatenate(all_neg_probs)
@@ -347,18 +350,24 @@ def evaluate_ranking(
     n_neighbors: int,
     n_negatives: int,
     device: str,
-    seed: int = 42
+    seed: int = 42,
+    max_samples: int = None  # Subsample for faster evaluation
 ) -> RankingMetrics:
     """
     Evaluate model with ranking metrics (Recall@K, NDCG@K).
     
     Uses negative sampling strategy: for each positive, rank among N negatives.
+    OPTIMIZED: Batches all negatives together for efficient evaluation.
+    
+    Args:
+        max_samples: If set, randomly sample this many test samples for faster eval.
+                     Use None for full evaluation (paper results).
     
     Args:
         model: MM-TGN model
         data: Evaluation data
         all_items: Array of all item IDs for negative sampling
-        batch_size: Batch size
+        batch_size: Batch size for processing
         n_neighbors: Number of neighbors for TGN
         n_negatives: Number of negatives per positive
         device: Device
@@ -376,8 +385,13 @@ def evaluate_ranking(
     
     indices = np.arange(len(data.sources))
     
+    # Subsample for faster evaluation during development
+    if max_samples is not None and max_samples < len(indices):
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(indices, size=max_samples, replace=False)
+        indices = np.sort(indices)  # Keep temporal order
+    
     # Save initial memory state for the entire evaluation
-    # This prevents memory corruption across batches
     initial_memory_backup = model.backup_memory()
     
     for start_idx in tqdm(range(0, len(indices), batch_size), desc="Ranking eval", leave=False):
@@ -390,47 +404,72 @@ def evaluate_ranking(
         timestamps = data.timestamps[batch_indices]
         edge_idxs = data.edge_idxs[batch_indices]
         
-        # Sample multiple negatives per positive
-        neg_items = neg_sampler.sample_negatives(destinations)  # [batch, n_negatives]
+        # Sample multiple negatives per positive: [batch, n_negatives]
+        neg_items = neg_sampler.sample_negatives(destinations)
         
-        # Backup memory before this batch (to restore after all scoring)
+        # Backup memory before scoring
         batch_memory_backup = model.backup_memory()
         
-        # Get positive scores: user → positive_item
+        # =====================================================================
+        # POSITIVE SCORES: user → positive_item (batch_size samples)
+        # =====================================================================
         _, negatives_dummy = RandEdgeSampler(sources, destinations).sample(batch_size_actual)
         pos_prob, _ = model.compute_edge_probabilities(
             sources, destinations, negatives_dummy,
             timestamps, edge_idxs, n_neighbors
         )
-        all_pos_scores.append(pos_prob.cpu().numpy())
+        all_pos_scores.append(pos_prob.squeeze().cpu().numpy())
         
-        # Restore memory after positive scoring (memory was updated as side effect)
+        # Restore memory (positive scoring updated it)
         model.restore_memory(batch_memory_backup)
         
-        # Get negative scores (need to score each negative)
+        # =====================================================================
+        # NEGATIVE SCORES: Batched computation (OPTIMIZED)
+        # Process negatives in chunks to avoid GPU OOM
+        # =====================================================================
+        
+        # Process negatives in chunks of neg_chunk_size to manage GPU memory
+        # With batch_size=200 and neg_chunk=20, each forward pass = 4000 samples
+        neg_chunk_size = 20  # Process 20 negatives at a time
         batch_neg_scores = np.zeros((batch_size_actual, n_negatives), dtype=np.float32)
         
-        for neg_idx in range(n_negatives):
-            neg_items_col = neg_items[:, neg_idx]
+        for chunk_start in range(0, n_negatives, neg_chunk_size):
+            chunk_end = min(chunk_start + neg_chunk_size, n_negatives)
+            chunk_size = chunk_end - chunk_start
             
-            # Backup memory state since we're scoring the same batch multiple times
-            memory_backup = model.backup_memory()
+            # Get this chunk of negatives: [batch, chunk_size]
+            neg_chunk = neg_items[:, chunk_start:chunk_end]
             
-            # Score user → negative_item
-            # compute_edge_probabilities(src, dst, neg) returns:
-            #   pos_prob = P(src → dst)  <-- We want this! (score of negative item)
-            #   neg_prob = P(src → neg)  <-- This is wrong (it scores destinations again)
-            # BUG FIX: Use pos_prob (first return), not neg_prob
-            neg_item_prob, _ = model.compute_edge_probabilities(
-                sources, neg_items_col, destinations,  # dst=neg_items, neg=original_pos
-                timestamps, edge_idxs, n_neighbors
+            # Expand sources/timestamps/edge_idxs for this chunk
+            sources_expanded = np.repeat(sources, chunk_size)
+            timestamps_expanded = np.repeat(timestamps, chunk_size)
+            edge_idxs_expanded = np.repeat(edge_idxs, chunk_size)
+            
+            # Flatten chunk: [batch, chunk_size] → [batch * chunk_size]
+            neg_items_flat = neg_chunk.flatten()
+            
+            # Dummy negatives for the function signature
+            dummy_neg = np.repeat(destinations, chunk_size)
+            
+            # Forward pass for this chunk of negatives (skip memory update!)
+            neg_prob_chunk, _ = model.compute_edge_probabilities(
+                sources_expanded,
+                neg_items_flat,
+                dummy_neg,
+                timestamps_expanded,
+                edge_idxs_expanded,
+                n_neighbors,
+                skip_memory_update=True  # Critical: avoid timestamp conflicts
             )
-            batch_neg_scores[:, neg_idx] = neg_item_prob.cpu().numpy()
             
-            # Restore memory
-            model.restore_memory(memory_backup)
+            # Store results: reshape [batch * chunk_size] → [batch, chunk_size]
+            batch_neg_scores[:, chunk_start:chunk_end] = \
+                neg_prob_chunk.squeeze().cpu().numpy().reshape(batch_size_actual, chunk_size)
         
         all_neg_scores.append(batch_neg_scores)
+        
+        # Restore memory for next batch
+        model.restore_memory(batch_memory_backup)
     
     # Restore initial memory state
     model.restore_memory(initial_memory_backup)
@@ -796,7 +835,8 @@ def train(args):
             n_neighbors=args.n_neighbors,
             n_negatives=args.n_neg_eval,
             device=device,
-            seed=args.seed
+            seed=args.seed,
+            max_samples=args.eval_sample_size  # Subsample for faster dev evaluation
         )
         
         model.restore_memory(memory_backup)
