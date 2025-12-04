@@ -668,8 +668,16 @@ if __name__ == '__main__':
             continue
 
         # train-set metrics
-        users_to_test = list(data_generator.train_items.keys())
-        ret = test(sess, model, users_to_test, drop_flag=True, train_set_flag=1)
+        # users_to_test = list(data_generator.train_items.keys())
+        # ret = test(sess, model, users_to_test, drop_flag=True, train_set_flag=1)
+        # test-set metrics (safe for GTS/custom splits)
+        test_users = set(data_generator.test_set.keys())
+        train_users = set(data_generator.train_items.keys())
+
+        # Only evaluate on users that actually have training interactions
+        users_to_test = list(test_users & train_users)
+
+        ret = test(sess, model, users_to_test, drop_flag=True)
         perf_str = 'Epoch %d: train==[%.5f=%.5f + %.5f + %.5f], hit=[%s], ndcg=[%s], mrr=[%s]' % \
                    (epoch, loss, mf_loss, emb_loss, reg_loss,
                     ', '.join(['%.5f' % r for r in ret['hit']]),
@@ -704,14 +712,28 @@ if __name__ == '__main__':
         t2 = time()
 
         # test-set metrics
-        users_to_test = list(data_generator.test_set.keys())
+        # users_to_test = list(data_generator.test_set.keys())
+        # ret = test(sess, model, users_to_test, drop_flag=True)
+        # summary_test_acc = sess.run(
+        #     model.merged_test_acc,
+        #     feed_dict={model.test_rec_first: ret['hit'][0],
+        #                model.test_rec_last: ret['hit'][-1],
+        #                model.test_ndcg_first: ret['ndcg'][0],
+        #                model.test_ndcg_last: ret['ndcg'][-1]}
+        # )
+        # train_writer.add_summary(summary_test_acc, epoch // 20)
+        # test-set metrics (safe for GTS/custom splits)
+        test_users  = set(data_generator.test_set.keys())
+        train_users = set(data_generator.train_items.keys())
+        users_to_test = list(test_users & train_users)
+
         ret = test(sess, model, users_to_test, drop_flag=True)
         summary_test_acc = sess.run(
             model.merged_test_acc,
             feed_dict={model.test_rec_first: ret['hit'][0],
-                       model.test_rec_last: ret['hit'][-1],
-                       model.test_ndcg_first: ret['ndcg'][0],
-                       model.test_ndcg_last: ret['ndcg'][-1]}
+                    model.test_rec_last: ret['hit'][-1],
+                    model.test_ndcg_first: ret['ndcg'][0],
+                    model.test_ndcg_last: ret['ndcg'][-1]}
         )
         train_writer.add_summary(summary_test_acc, epoch // 20)
 
@@ -768,3 +790,12 @@ if __name__ == '__main__':
            args.mess_dropout, args.regs, args.adj_type, final_perf)
     )
     f.close()
+    user_emb, item_emb = sess.run([model.ua_embeddings, model.ia_embeddings])
+
+    out_dir = os.path.join(args.data_path, args.dataset)
+    os.makedirs(out_dir, exist_ok=True)
+
+    np.save(os.path.join(out_dir, "user_emb.npy"), user_emb)
+    np.save(os.path.join(out_dir, "item_emb.npy"), item_emb)
+
+    print("Saved LightGCN embeddings to", out_dir)

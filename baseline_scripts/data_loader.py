@@ -107,15 +107,16 @@ def load_gts_dataset(
             )
 
     # 2) Build global mappings for raw user / item IDs
-    all_users = pd.concat([train_df[user_col], val_df[user_col], test_df[user_col]]).unique()
-    all_items = pd.concat([train_df[item_col], val_df[item_col], test_df[item_col]]).unique()
+    all_users = pd.concat(
+        [train_df[user_col], val_df[user_col], test_df[user_col]]
+    ).unique()
+    all_items = pd.concat(
+        [train_df[item_col], val_df[item_col], test_df[item_col]]
+    ).unique()
 
-    # keep everything as string for safety
-    all_users_str = [str(x) for x in all_users]
-    all_items_str = [str(x) for x in all_items]
-
-    all_users_sorted = sorted(all_users_str)
-    all_items_sorted = sorted(all_items_str)
+    # Use native types (ints stay ints, strings stay strings)
+    all_users_sorted = sorted(all_users)
+    all_items_sorted = sorted(all_items)
 
     user2id = {uid: idx for idx, uid in enumerate(all_users_sorted)}
     id2user = list(all_users_sorted)
@@ -123,24 +124,37 @@ def load_gts_dataset(
     item2id = {iid: idx for idx, iid in enumerate(all_items_sorted)}
     id2item = list(all_items_sorted)
 
+
     num_users = len(user2id)
     num_items = len(item2id)
 
     def df_to_interactions(df):
         inters = []
         for _, row in df.iterrows():
-            u_raw = str(row[user_col])
-            i_raw = str(row[item_col])
+            u_raw = row[user_col]
+            i_raw = row[item_col]
             ts = int(row[ts_col])
 
-            if u_raw not in user2id or i_raw not in item2id:
+            # Skip missing IDs
+            if pd.isna(u_raw) or pd.isna(i_raw):
+                print("SKIP MISSING ID")
                 continue
 
-            u = user2id[u_raw]
-            i = item2id[i_raw]
+            # Look up directly using native types
+            try:
+                u = user2id[u_raw]
+                i = item2id[i_raw]
+            except KeyError:
+                # If there is still some weird mismatch, just skip that row
+                # or you can add a print here for debugging.
+                print("SOME WEIRD MISMATCH")
+                continue
+
             inters.append(Interaction(user=u, item=i, timestamp=ts))
+
         inters.sort(key=lambda x: (x.user, x.timestamp))
         return inters
+
 
     train_inters = df_to_interactions(train_df)
     val_inters = df_to_interactions(val_df)
