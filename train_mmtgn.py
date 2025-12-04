@@ -205,6 +205,9 @@ def compute_link_pred_metrics(
     Compute standard link prediction metrics.
     
     Returns dict with: AP, AUC, MRR
+    
+    Note: Uses 1:1 pair-wise comparison (each positive vs its paired negative).
+    For more meaningful ranking metrics (Recall@K, NDCG@K), use evaluate_ranking().
     """
     # For AP and AUC, we need binary labels
     labels = np.concatenate([np.ones(len(pos_probs)), np.zeros(len(neg_probs))])
@@ -213,12 +216,21 @@ def compute_link_pred_metrics(
     ap = average_precision_score(labels, probs)
     auc = roc_auc_score(labels, probs)
     
-    # Mean Reciprocal Rank (simple 1:1 comparison)
+    # Mean Reciprocal Rank: 1:1 pair-wise comparison
+    # For each (pos, neg) pair, rank is 1 if pos > neg, else 2
+    # This gives MRR in [0.5, 1.0] range - comparable to AUC
     mrr = 0.0
-    for i, pos_p in enumerate(pos_probs):
-        rank = 1 + (neg_probs > pos_p).sum()
+    n_samples = min(len(pos_probs), len(neg_probs))
+    for i in range(n_samples):
+        # Pair-wise: compare positive[i] with negative[i]
+        if pos_probs[i] > neg_probs[i]:
+            rank = 1
+        elif pos_probs[i] == neg_probs[i]:
+            rank = 1.5  # Tie: average of rank 1 and 2
+        else:
+            rank = 2
         mrr += 1.0 / rank
-    mrr /= len(pos_probs)
+    mrr /= n_samples
     
     return {"AP": ap, "AUC": auc, "MRR": mrr}
 
@@ -872,6 +884,9 @@ def train(args):
     # TEST EVALUATION: TRANSDUCTIVE vs INDUCTIVE
     # =============================================================
     
+    trans_ranking_metrics = None
+    induct_ranking_metrics = None
+    
     if len(transductive_test_data) > 0:
         logger.info("\n" + "-" * 50)
         logger.info("TEST SET EVALUATION (Transductive - Old Nodes)")
@@ -894,6 +909,31 @@ def train(args):
         logger.info(f"  AP:  {trans_lp_metrics['AP']:.4f}")
         logger.info(f"  AUC: {trans_lp_metrics['AUC']:.4f}")
         logger.info(f"  MRR: {trans_lp_metrics['MRR']:.4f}")
+        
+        # Ranking metrics for transductive
+        if args.eval_ranking:
+            memory_backup = model.backup_memory()
+            
+            trans_ranking_metrics = evaluate_ranking(
+                model=model,
+                data=transductive_test_data,
+                all_items=all_items,
+                batch_size=args.batch_size,
+                n_neighbors=args.n_neighbors,
+                n_negatives=args.n_neg_eval,
+                device=device,
+                seed=args.seed,
+                max_samples=args.eval_sample_size
+            )
+            
+            model.restore_memory(memory_backup)
+            
+            logger.info(f"\n📊 Transductive Ranking Metrics:")
+            logger.info(f"  Recall@10: {trans_ranking_metrics.recall_at_10:.4f}")
+            logger.info(f"  Recall@20: {trans_ranking_metrics.recall_at_20:.4f}")
+            logger.info(f"  NDCG@10:   {trans_ranking_metrics.ndcg_at_10:.4f}")
+            logger.info(f"  NDCG@20:   {trans_ranking_metrics.ndcg_at_20:.4f}")
+            logger.info(f"  MRR:       {trans_ranking_metrics.mrr:.4f}")
     
     if len(inductive_test_data) > 0:
         logger.info("\n" + "-" * 50)
@@ -918,11 +958,42 @@ def train(args):
         logger.info(f"  AUC: {induct_lp_metrics['AUC']:.4f}")
         logger.info(f"  MRR: {induct_lp_metrics['MRR']:.4f}")
         
+        # Ranking metrics for inductive (KEY METRIC for cold-start!)
+        if args.eval_ranking:
+            memory_backup = model.backup_memory()
+            
+            induct_ranking_metrics = evaluate_ranking(
+                model=model,
+                data=inductive_test_data,
+                all_items=all_items,
+                batch_size=args.batch_size,
+                n_neighbors=args.n_neighbors,
+                n_negatives=args.n_neg_eval,
+                device=device,
+                seed=args.seed,
+                max_samples=args.eval_sample_size
+            )
+            
+            model.restore_memory(memory_backup)
+            
+            logger.info(f"\n📊 Inductive Ranking Metrics (COLD-START KEY METRICS):")
+            logger.info(f"  Recall@10: {induct_ranking_metrics.recall_at_10:.4f}")
+            logger.info(f"  Recall@20: {induct_ranking_metrics.recall_at_20:.4f}")
+            logger.info(f"  NDCG@10:   {induct_ranking_metrics.ndcg_at_10:.4f}")
+            logger.info(f"  NDCG@20:   {induct_ranking_metrics.ndcg_at_20:.4f}")
+            logger.info(f"  MRR:       {induct_ranking_metrics.mrr:.4f}")
+        
         # Log cold-start improvement (key hypothesis)
         if len(transductive_test_data) > 0:
             improvement = induct_lp_metrics['AP'] - trans_lp_metrics['AP']
             logger.info(f"\n🎯 Cold-Start Analysis:")
             logger.info(f"  Inductive vs Transductive AP Δ: {improvement:+.4f}")
+            
+            if args.eval_ranking and trans_ranking_metrics is not None and induct_ranking_metrics is not None:
+                recall_delta = induct_ranking_metrics.recall_at_10 - trans_ranking_metrics.recall_at_10
+                ndcg_delta = induct_ranking_metrics.ndcg_at_10 - trans_ranking_metrics.ndcg_at_10
+                logger.info(f"  Inductive vs Transductive Recall@10 Δ: {recall_delta:+.4f}")
+                logger.info(f"  Inductive vs Transductive NDCG@10 Δ:   {ndcg_delta:+.4f}")
     else:
         logger.info("\n⚠️ No inductive test samples (all nodes seen during training)")
     
@@ -930,6 +1001,7 @@ def train(args):
     # SAVE RESULTS
     # =============================================================
     
+    # TensorBoard: Overall metrics
     writer.add_scalar("Metrics/test_AP", test_lp_metrics['AP'], 0)
     writer.add_scalar("Metrics/test_AUC", test_lp_metrics['AUC'], 0)
     writer.add_scalar("Metrics/test_MRR", test_lp_metrics['MRR'], 0)
@@ -939,6 +1011,24 @@ def train(args):
         writer.add_scalar("Metrics/test_Recall@20", test_ranking_metrics.recall_at_20, 0)
         writer.add_scalar("Metrics/test_NDCG@10", test_ranking_metrics.ndcg_at_10, 0)
         writer.add_scalar("Metrics/test_NDCG@20", test_ranking_metrics.ndcg_at_20, 0)
+        writer.add_scalar("Metrics/test_MRR_ranking", test_ranking_metrics.mrr, 0)
+    
+    # TensorBoard: Transductive/Inductive split metrics
+    if len(transductive_test_data) > 0:
+        writer.add_scalar("Metrics/trans_AP", trans_lp_metrics['AP'], 0)
+        writer.add_scalar("Metrics/trans_AUC", trans_lp_metrics['AUC'], 0)
+        if trans_ranking_metrics is not None:
+            writer.add_scalar("Metrics/trans_Recall@10", trans_ranking_metrics.recall_at_10, 0)
+            writer.add_scalar("Metrics/trans_NDCG@10", trans_ranking_metrics.ndcg_at_10, 0)
+            writer.add_scalar("Metrics/trans_MRR", trans_ranking_metrics.mrr, 0)
+    
+    if len(inductive_test_data) > 0:
+        writer.add_scalar("Metrics/induct_AP", induct_lp_metrics['AP'], 0)
+        writer.add_scalar("Metrics/induct_AUC", induct_lp_metrics['AUC'], 0)
+        if induct_ranking_metrics is not None:
+            writer.add_scalar("Metrics/induct_Recall@10", induct_ranking_metrics.recall_at_10, 0)
+            writer.add_scalar("Metrics/induct_NDCG@10", induct_ranking_metrics.ndcg_at_10, 0)
+            writer.add_scalar("Metrics/induct_MRR", induct_ranking_metrics.mrr, 0)
     
     # Build results dict
     results = {
@@ -954,10 +1044,18 @@ def train(args):
         results['test']['ranking'] = test_ranking_metrics.to_dict()
     
     if len(transductive_test_data) > 0:
-        results['test']['transductive'] = trans_lp_metrics
+        results['test']['transductive'] = {
+            'link_prediction': trans_lp_metrics,
+        }
+        if trans_ranking_metrics is not None:
+            results['test']['transductive']['ranking'] = trans_ranking_metrics.to_dict()
     
     if len(inductive_test_data) > 0:
-        results['test']['inductive'] = induct_lp_metrics
+        results['test']['inductive'] = {
+            'link_prediction': induct_lp_metrics,
+        }
+        if induct_ranking_metrics is not None:
+            results['test']['inductive']['ranking'] = induct_ranking_metrics.to_dict()
     
     with open(save_dir / "results.json", "w") as f:
         json.dump(results, f, indent=2)
