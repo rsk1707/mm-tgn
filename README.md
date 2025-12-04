@@ -34,11 +34,11 @@ nvidia-smi
 ### 2. Run Smoke Test (Quick Verification)
 
 ```bash
-# Submit smoke test job (~10 min)
+# Submit smoke test job (~45 min total: 25min training + 15min eval + 5min splits)
 sbatch jobs/smoke_test.sh
 
 # Or run interactively
-srun --account cse576f25s001_class --partition gpu --gpus 1 --mem 32G --time 00:30:00 \
+srun --account cse576f25s001_class --partition gpu --gpus 1 --mem 32G --time 01:00:00 \
     python train_mmtgn.py --data-dir data/processed --dataset ml-modern --epochs 1
 ```
 
@@ -173,9 +173,11 @@ mm-tgn/
 
 | Experiment | Command | Description |
 |------------|---------|-------------|
-| MLP | `--mm-fusion mlp` | Simple 2-layer projection |
-| FiLM | `--mm-fusion film` | Text modulates image: `γ(text)⊙img + β(text)` |
-| Gated | `--mm-fusion gated` | Learned attention: `g⊙text + (1-g)⊙image` |
+| **MLP** | `--mm-fusion mlp` | Concatenate text+image, then 2-layer MLP projection: `MLP(concat(text, image))` |
+| **FiLM** | `--mm-fusion film` | Text modulates image features: `γ(text) ⊙ proj(image) + β(text)` |
+| **Gated** | `--mm-fusion gated` | Learned attention weights: `gate ⊙ proj(text) + (1-gate) ⊙ proj(image)` |
+
+**Note**: All fusion methods output 172-dim embeddings (TGN working dimension). Input: pre-concatenated 2688-dim features (1536 text + 1152 image).
 
 ---
 
@@ -183,9 +185,11 @@ mm-tgn/
 
 | Model | Test AP | Recall@10 | NDCG@10 | Notes |
 |-------|---------|-----------|---------|-------|
-| Vanilla (random) | ~0.50 | ~0.01 | ~0.01 | Lower bound |
-| MM-TGN (SOTA+MLP) | >0.80 | >0.05 | >0.03 | Default |
-| MM-TGN (SOTA+FiLM) | ~0.82 | ~0.06 | ~0.04 | Best fusion? |
+| Vanilla (random) | ~0.55-0.65 | ~0.02-0.05 | ~0.01-0.03 | Lower bound (BPR loss) |
+| MM-TGN (SOTA+MLP) | >0.80 | >0.08-0.15 | >0.05-0.10 | Default (BPR loss) |
+| MM-TGN (SOTA+FiLM) | ~0.82-0.90 | ~0.10-0.18 | ~0.06-0.12 | Best fusion? (BPR loss) |
+
+**All experiments use BPR (Bayesian Personalized Ranking) loss** - standard for recommender systems, directly optimizes ranking metrics.
 
 **Key Comparison**: SOTA Inductive AP >> Vanilla Inductive AP (proves cold-start hypothesis)
 
@@ -238,14 +242,20 @@ checkpoints/<run_name>/
 ## 🔧 TensorBoard
 
 ```bash
-# On compute node
+# On compute node (where your job is running)
 tensorboard --logdir=runs --port=6006 --host=0.0.0.0 &
+# Check node: squeue -u $USER
 
-# On local machine (SSH tunnel)
-ssh -L 6006:gl1509.arc-ts.umich.edu:6006 huseynli@greatlakes.arc-ts.umich.edu
+# On local machine (SSH tunnel - replace gl1013 with your compute node)
+ssh -L 6006:gl1013.arc-ts.umich.edu:6006 huseynli@greatlakes.arc-ts.umich.edu
 
 # Open browser: http://localhost:6006
 ```
+
+**What you'll see in TensorBoard:**
+- **Scalars**: Train Loss, Val AP, Val AUC per epoch
+- **Final Metrics**: test_AP, test_Recall@10, test_NDCG@10
+- **Split Metrics**: trans_AP, induct_AP, trans_Recall@10, induct_Recall@10
 
 ---
 

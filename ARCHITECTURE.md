@@ -1,7 +1,7 @@
 # MM-TGN: Multimodal Temporal Graph Network
 ## Complete Architecture & API Documentation
 
-**Version**: 2.3 (SLURM Jobs & MM-Fusion Ablation)  
+**Version**: 2.4 (BPR Loss & OOM Fix)  
 **Last Updated**: December 4, 2025  
 **Research Goal**: Solve Cold Start and Concept Drift in Recommendation Systems  
 **Environment**: Great Lakes HPC (University of Michigan)
@@ -251,7 +251,7 @@ Item (last)  → Index 32,169
 | `--lr` | `float` | `1e-4` | Learning rate |
 | `--weight-decay` | `float` | `1e-5` | L2 regularization weight |
 | `--patience` | `int` | `5` | Early stopping patience (epochs) |
-| `--loss` | `str` | `bce` | Loss function: `bce` (stable) or `bpr` (ranking) |
+| `--loss` | `str` | `bpr` | Loss function: `bpr` (default, ranking-optimized) or `bce` (stable) |
 
 ### Feature & Model Arguments
 
@@ -280,9 +280,11 @@ Item (last)  → Index 32,169
 - `random`: Learnable `nn.Embedding` (172-dim) - **Lower bound, no content**
 
 **Multimodal Fusion (`--mm-fusion`):**
-- `mlp`: Simple 2-layer MLP projection (default)
-- `film`: FiLM conditioning - text modulates image: `γ(text) ⊙ img + β(text)`
-- `gated`: Gated fusion - learned attention: `g ⊙ text + (1-g) ⊙ image`
+- `mlp`: **Concatenate then project** - `MLP(concat(text, image))` where input is pre-concatenated 2688-dim (default)
+- `film`: **FiLM conditioning** - Text modulates projected image: `γ(text) ⊙ proj(image) + β(text)`
+- `gated`: **Gated fusion** - Learned attention weights: `gate ⊙ proj(text) + (1-gate) ⊙ proj(image)`
+
+**All methods output 172-dim embeddings** (TGN working dimension). Input features are pre-concatenated in the `.npy` file: `[text: 1536-dim | image: 1152-dim] = 2688-dim`.
 
 ### Evaluation Arguments
 
@@ -324,14 +326,14 @@ Pre-configured job scripts are available in `jobs/` for easy submission:
 
 ### Quick Reference
 
-| Script | Purpose | Time |
-|--------|---------|------|
-| `smoke_test.sh` | Quick verification (~5K samples) | 30 min |
-| `train_ml_vanilla.sh` | Vanilla baseline (random features) | 6 hours |
-| `train_ml_sota.sh` | SOTA + MLP fusion | 8 hours |
-| `train_ml_sota_film.sh` | SOTA + FiLM fusion | 8 hours |
-| `train_ml_sota_gated.sh` | SOTA + Gated fusion | 8 hours |
-| `submit_all_ml.sh` | Submit ALL ablation experiments | - |
+| Script | Purpose | Time | Loss |
+|--------|---------|------|------|
+| `smoke_test.sh` | Quick verification (~5K samples) | 1 hour | BPR |
+| `train_ml_vanilla.sh` | Vanilla baseline (random features) | 6 hours | BPR |
+| `train_ml_sota.sh` | SOTA + MLP fusion | 8 hours | BPR |
+| `train_ml_sota_film.sh` | SOTA + FiLM fusion | 8 hours | BPR |
+| `train_ml_sota_gated.sh` | SOTA + Gated fusion | 8 hours | BPR |
+| `submit_all_ml.sh` | Submit ALL ablation experiments | - | - |
 
 ### Usage
 
@@ -407,7 +409,7 @@ python train_mmtgn.py \
     --batch-size 200 \
     --epochs 1 \
     --lr 1e-4 \
-    --loss bce \
+    --loss bpr \
     --eval-ranking \
     --n-neg-eval 100 \
     --run-name "smoke_test_full"
@@ -984,6 +986,7 @@ Open: **http://localhost:6006**
 | TensorBoard IPv6 binding error | Use `--host=0.0.0.0` | ✅ Fixed |
 | Memory assertion "update to time in past" | Added `skip_memory_update=True` for negative scoring | ✅ Fixed |
 | Vanilla model not learning (AP ≈ 0.47) | Fixed gradient flow: use direct assignment instead of `.data.copy_()` | ✅ Fixed |
+| CUDA OOM during ranking eval | Reduced neg_chunk_size (20→5) and ranking batch_size (200→100), added GPU cache clearing | ✅ Fixed |
 | Gradient warning (non-leaf tensor) | Harmless, ignore | ⚠️ Cosmetic |
 | PyG extension warnings | Fallback works | ⚠️ Non-blocking |
 
@@ -1011,25 +1014,46 @@ self.node_raw_features.data.copy_(all_features)
 self.embedding_module.node_features = all_features
 ```
 
+**Bug 3: CUDA Out of Memory During Ranking Evaluation**
+- **Symptom**: `torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.47 GiB`
+- **Cause**: Ranking evaluation processed too many samples: `batch_size=200 × neg_chunk=20 = 4,000 samples` per forward pass, causing attention computation to exceed GPU memory
+- **Fix**: 
+  - Reduced `neg_chunk_size` from 20 to 5 (500 samples per pass)
+  - Reduced ranking eval `batch_size` to `min(original, 100)`
+  - Added `torch.cuda.empty_cache()` after positive scoring
+- **Location**: `train_mmtgn.py` lines ~450, ~875
+
+```python
+# BEFORE (OOM):
+neg_chunk_size = 20  # 4000 samples per pass
+batch_size = 200
+
+# AFTER (fixed):
+neg_chunk_size = 5   # 500 samples per pass
+ranking_batch_size = min(args.batch_size, 100)
+torch.cuda.empty_cache()  # Clear GPU cache
+```
+
 ---
 
 ## 📊 Expected Metrics
 
-### Smoke Test (1 Epoch)
+### Smoke Test (1 Epoch, BPR Loss)
 | Metric | SOTA Expected | Vanilla Expected | Notes |
 |--------|---------------|------------------|-------|
-| Train Loss | 0.5 - 0.7 | 0.6 - 0.7 | Should decrease |
-| Val AP | 0.75 - 0.85 | 0.55 - 0.70 | Better than 0.5 |
-| Val AUC | 0.75 - 0.85 | 0.55 - 0.70 | Better than 0.5 |
+| Train Loss (BPR) | -0.3 to -0.5 | -0.1 to -0.3 | Negative (maximizing margin) |
+| Val AP | 0.85 - 0.95 | 0.55 - 0.70 | Better than 0.5 |
+| Val AUC | 0.85 - 0.95 | 0.55 - 0.70 | Better than 0.5 |
 | Time | ~25 min | ~20 min | On 1 GPU |
 
-### Full Training (50 Epochs)
+### Full Training (50 Epochs, BPR Loss)
 | Metric | SOTA Transductive | SOTA Inductive | Vanilla | Notes |
 |--------|-------------------|----------------|---------|-------|
 | Test AP | > 0.85 | > 0.80 | > 0.60 | SOTA >> Vanilla = success |
 | Test AUC | > 0.85 | > 0.80 | > 0.60 | |
-| Recall@10 | > 0.05 | > 0.02 | > 0.01 | Higher = better |
-| NDCG@10 | > 0.03 | > 0.01 | > 0.01 | Higher = better |
+| Recall@10 | > 0.08-0.15 | > 0.05-0.10 | > 0.02-0.05 | Higher = better |
+| NDCG@10 | > 0.05-0.10 | > 0.03-0.06 | > 0.01-0.03 | Higher = better |
+| MRR (ranking) | > 0.15-0.30 | > 0.10-0.20 | > 0.05-0.15 | Higher = better |
 
 ### Key Comparisons (Research Validation)
 | Comparison | Expected Outcome | What It Proves |
@@ -1077,6 +1101,22 @@ python train_mmtgn.py --data-dir data/processed --dataset ml-modern --epochs 1
 ---
 
 ## 📝 Changelog
+
+### 2025-12-04 (v2.4) - BPR Loss & OOM Fix
+- **🔧 Loss Function Update**
+  - Switched default loss from BCE to **BPR (Bayesian Personalized Ranking)**
+  - BPR directly optimizes ranking metrics (Recall@K, NDCG@K, MRR)
+  - Standard in recommender systems literature
+  - All job scripts now use `--loss bpr`
+- **🐛 CRITICAL FIX: CUDA Out of Memory (OOM)**
+  - Reduced `neg_chunk_size` from 20 to 5 (1000 → 500 samples per pass)
+  - Reduced ranking eval `batch_size` to min(original, 100)
+  - Added `torch.cuda.empty_cache()` after positive scoring
+  - Fixes OOM during ranking evaluation with attention computation
+- **📚 Documentation Updates**
+  - Updated README.md with correct smoke test time (1 hour)
+  - Clarified multimodal fusion methods (MLP concatenates, FiLM/Gated split)
+  - Added TensorBoard metrics overview
 
 ### 2025-12-04 (v2.3) - SLURM Jobs & MM-Fusion Ablation
 - **📦 NEW: SLURM Job Scripts** (`jobs/` folder)
