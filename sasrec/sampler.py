@@ -13,7 +13,9 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
     def sample():
 
         user = np.random.randint(1, usernum + 1)
-        while len(user_train[user]) <= 1: user = np.random.randint(1, usernum + 1)
+        # while len(user_train[user]) <= 1: user = np.random.randint(1, usernum + 1)
+        while (user not in user_train) or (len(user_train[user]) <= 1):
+            user = np.random.randint(1, usernum + 1)
 
         seq = np.zeros([maxlen], dtype=np.int32)
         pos = np.zeros([maxlen], dtype=np.int32)

@@ -25,6 +25,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 cpus = [x.name for x in device_lib.list_local_devices() if x.device_type == 'CPU']
 
+# python LightGCN.py --data_path ./Data/ --dataset ml-modern-gts --model_type lightgcn --alg_type lightgcn --adj_type pre --pretrain 0 --epoch 60 --embed_size 64 --layer_size "[64,64,64]" --regs "[1e-4]" --lr 1e-3 --batch_size 1024 --Ks "[10]" > lightgcn_log.txt
+
 
 class LightGCN(object):
     def __init__(self, data_config, pretrain_data):

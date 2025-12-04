@@ -71,6 +71,7 @@ sampler = WarpSampler(user_train, usernum, itemnum,
 
 model = Model(usernum, itemnum, args)
 sess.run(tf.initialize_all_variables())
+saver = tf.train.Saver(max_to_keep=1)
 
 if args.mm_item_init is not None:
     print('Loading multimodal item embeddings from %s' % args.mm_item_init)
@@ -140,4 +141,7 @@ except Exception:
 
 f.close()
 sampler.close()
+ckpt_path = os.path.join(args.train_dir, "sasrec.ckpt")
+saver.save(sess, ckpt_path)
+print("Saved SASRec checkpoint to", ckpt_path)
 print("Done")

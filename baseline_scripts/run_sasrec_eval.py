@@ -1,96 +1,127 @@
-# baseline_scripts/run_sasrec_eval.py
+# baseline_scripts/run_sasrec_eval.py  (TF SASRec + unified eval)
 
 import os
 import sys
-from typing import Dict, List
 
 import numpy as np
-import torch
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
+sys.path.append(os.path.join(PROJECT_ROOT, "sasrec"))
 
-from baseline_scripts.data_loader import load_gts_dataset, build_sasrec_inputs
+from baseline_scripts.data_loader import load_gts_dataset  # GTS canonical loader
 from baseline_scripts.eval_sampled import (
     build_user_pos_pairs_from_test,
     evaluate_sampled,
 )
+from sasrec.model import Model  # your TF SASRec model :contentReference[oaicite:11]{index=11}
 
-# from sasrec.model import SASRec  # adjust to your actual paths
 
-
-def make_sasrec_score_fn(
-    model,
-    user_train_seq: Dict[int, List[int]],
-    max_seq_len: int,
-) -> callable:
+def make_sasrec_score_fn(sess, model, user_train_items, maxlen):
     """
-    Adapter for SASRec.
-
-    Expects `model` to have something like:
-      model.predict(user_sequence, item_ids) -> scores
-
-    You will need to adapt this to your implementation (e.g., padding, device).
+    Wrap TF SASRec into a score_fn(users, items) -> [B, C] scores
+    compatible with evaluate_sampled(). 
     """
 
-    device = next(model.parameters()).device
-
-    def _build_sequence(u: int) -> torch.Tensor:
-        seq = user_train_seq.get(u, [])
-        if len(seq) >= max_seq_len:
-            seq = seq[-max_seq_len:]
-        # left pad with 0 if you use 0 as [PAD] / [MASK] in SASRec
-        pad_len = max_seq_len - len(seq)
+    def _build_seq(u_internal: int) -> np.ndarray:
+        """
+        Build a 1D int32 array of length maxlen:
+        left-padded with 0s, then 1-based item IDs from GTS train history.
+        """
+        hist_items_0 = user_train_items.get(u_internal, [])
+        # convert to 1-based for SASRec
+        seq = [i + 1 for i in hist_items_0]
+        if len(seq) >= maxlen:
+            seq = seq[-maxlen:]
+        pad_len = maxlen - len(seq)
         padded = [0] * pad_len + seq
-        return torch.tensor(padded, dtype=torch.long, device=device).unsqueeze(0)  # [1, L]
+        return np.array(padded, dtype=np.int32).reshape(1, maxlen)  # [1, L]
 
     def score_fn(user_ids: np.ndarray, item_ids: np.ndarray) -> np.ndarray:
-        # Here we assume user_ids has shape [B], but our eval_sampled calls with B=1.
-        assert user_ids.ndim == 1
-        assert item_ids.ndim == 1
+        # Our eval_sampled always calls with B=1, but we enforce shapes anyway.
+        assert user_ids.ndim == 1 and item_ids.ndim == 1
+        assert user_ids.shape[0] == 1
 
-        u = int(user_ids[0])
-        cand = torch.from_numpy(item_ids).long().to(device)  # [C]
+        u_internal = int(user_ids[0])       # 0-based GTS ID
+        u_sas = np.array([u_internal + 1], dtype=np.int32)  # SASRec is 1-based
 
-        seq = _build_sequence(u)  # [1, L]
+        seq = _build_seq(u_internal)        # [1, maxlen]
 
-        # TODO: adapt this call to your SASRec implementation
-        # Example:
-        # scores = model.predict(seq, cand.unsqueeze(0))  # [1, C]
-        scores = model.predict(seq, cand.unsqueeze(0))  # replace with actual
+        # candidates: convert to 1-based item IDs for SASRec
+        cand_1 = np.array([i + 1 for i in item_ids], dtype=np.int32)
 
-        scores = scores.detach().cpu().numpy()
-        return scores.astype(np.float32)
+        # Model.predict expects:
+        #   u: [batch], seq: [batch, L], item_idx: [num_candidates]
+        # and returns logits [batch, num_candidates]. :contentReference[oaicite:13]{index=13}
+        logits = model.predict(sess, u_sas, seq, cand_1)
+
+        # ensure shape [1, C]
+        logits = np.asarray(logits)
+        if logits.ndim != 2 or logits.shape[0] != 1 or logits.shape[1] != len(cand_1):
+            raise ValueError(
+                f"SASRec logits shape mismatch, expected [1,{len(cand_1)}], got {logits.shape}"
+            )
+
+        return logits.astype(np.float32)
 
     return score_fn
 
 
 def main():
+    # 1) Canonical GTS dataset
     dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name="ml-modern")
-    num_users, num_items, user_train_seq, user_val_items, user_test_items = build_sasrec_inputs(dataset)
+    num_users = dataset.num_users
+    num_items = dataset.num_items
+    user_train_items = dataset.user_train_items  # 0-based item IDs :contentReference[oaicite:14]{index=14}
 
-    # Load your trained SASRec here (no warm start to other models; just its own training)
-    # model = SASRec(num_users, num_items, ...)  # TODO
-    # model.load_state_dict(torch.load("path/to/sasrec_checkpoint.pt"))
-    model = ...  # TODO
-    model.eval()
+    # 2) Build user-pos pairs from GTS *test* split
+    user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)  # :contentReference[oaicite:15]{index=15}
 
-    max_seq_len = 50  # or whatever you used in training
-    score_fn = make_sasrec_score_fn(model, user_train_seq, max_seq_len)
+    # 3) Restore trained SASRec model from a checkpoint
+    #    Make sure you saved it in sasrec/main.py using tf.train.Saver().
+    from argparse import Namespace
+    args = Namespace(
+        maxlen=50,
+        hidden_units=64,
+        num_blocks=2,
+        num_heads=1,
+        dropout_rate=0.5,
+        l2_emb=0.0,
+        lr=0.001,
+    )
 
-    user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)
+    # SASRec expects usernum, itemnum in *1-based* range.
+    usernum = num_users
+    itemnum = num_items
+
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+
+    with tf.variable_scope("SASRec"):
+        model = Model(usernum, itemnum, args)
+
+    saver = tf.train.Saver()
+    ckpt_path = os.path.join(PROJECT_ROOT, "sasrec", "ml-modern-gts_runs", "sasrec.ckpt")
+    saver.restore(sess, ckpt_path)
+    print("Restored SASRec checkpoint from:", ckpt_path)
+
+    # 4) Make score_fn and run unified sampled eval
+    score_fn = make_sasrec_score_fn(sess, model, user_train_items, maxlen=args.maxlen)
 
     hit, ndcg, mrr = evaluate_sampled(
         score_fn=score_fn,
         user_pos_pairs=user_pos_pairs,
-        num_items=dataset.num_items,
+        num_items=num_items,
         user_all_pos_items=dataset.user_all_pos_items,
         num_neg=100,
         k=10,
         seed=42,
     )
 
-    print(f"[SASRec] Hit@10={hit:.4f}, NDCG@10={ndcg:.4f}, MRR@10={mrr:.4f}")
+    print(f"[SASRec | ml-modern] Hit@10={hit:.4f}, NDCG@10={ndcg:.4f}, MRR@10={mrr:.4f}")
 
 
 if __name__ == "__main__":
