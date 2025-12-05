@@ -59,7 +59,11 @@ def data_load(dataset, has_v=True, has_a=True, has_t=True):
       FeatureAudio_avg_normal.npy    (optional)
       FeatureText_stl_normal.npy     (optional)
     """
-    dir_str = os.path.join('./Data', dataset)
+    # dir_str = os.path.join('./Data', dataset)
+    if os.path.isdir(dataset):
+        dir_str = dataset
+    else:
+        dir_str = os.path.join('./Data', dataset)
 
     train_edge = np.load(os.path.join(dir_str, 'train.npy'), allow_pickle=True)
     user_item_dict = np.load(
