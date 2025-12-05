@@ -18,6 +18,30 @@ from baseline_scripts.eval_sampled import (
 )
 from sasrec.model import Model  # your TF SASRec model :contentReference[oaicite:11]{index=11}
 
+def get_sasrec_itemnum_from_file():
+    """
+    Read sasrec/data/ml-modern-gts.txt and return the itemnum that SASRec
+    was actually trained with (max 1-based item ID in the file).
+    """
+    data_path = os.path.join(PROJECT_ROOT, "sasrec", "data", "ml-modern-gts.txt")
+    max_item_1 = 0
+    with open(data_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                _, item_str = line.split()
+            except ValueError:
+                continue
+            item_1 = int(item_str)
+            if item_1 > max_item_1:
+                max_item_1 = item_1
+
+    if max_item_1 == 0:
+        raise RuntimeError(f"No interactions found in {data_path}")
+    return max_item_1  # this is exactly the `itemnum` SASRec used at train time
+
 
 def make_sasrec_score_fn(sess, model, user_train_items, maxlen):
     """
@@ -70,14 +94,30 @@ def make_sasrec_score_fn(sess, model, user_train_items, maxlen):
 
 
 def main():
-    # 1) Canonical GTS dataset
+    # # 1) Canonical GTS dataset
+    # dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name="ml-modern")
+    # num_users = dataset.num_users
+    # num_items = dataset.num_items
+    # user_train_items = dataset.user_train_items  # 0-based item IDs :contentReference[oaicite:14]{index=14}
+
+    # # 2) Build user-pos pairs from GTS *test* split
+    # user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)  # :contentReference[oaicite:15]{index=15}
+
+    # 1) Canonical GTS dataset (all splits)
     dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name="ml-modern")
     num_users = dataset.num_users
-    num_items = dataset.num_items
-    user_train_items = dataset.user_train_items  # 0-based item IDs :contentReference[oaicite:14]{index=14}
+    num_items_global = dataset.num_items
+    user_train_items = dataset.user_train_items  # 0-based item IDs
 
     # 2) Build user-pos pairs from GTS *test* split
-    user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)  # :contentReference[oaicite:15]{index=15}
+    user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)
+
+    # --- NEW: get the SASRec item universe from the training file ---
+    sas_itemnum = get_sasrec_itemnum_from_file()     # 1-based
+    sas_num_items_internal = sas_itemnum             # internal IDs 0..sas_itemnum-1
+
+    # Filter out test positives that SASRec has no embedding for
+    user_pos_pairs = [(u, i) for (u, i) in user_pos_pairs if i < sas_num_items_internal]
 
     # 3) Restore trained SASRec model from a checkpoint
     #    Make sure you saved it in sasrec/main.py using tf.train.Saver().
@@ -92,29 +132,63 @@ def main():
         lr=0.001,
     )
 
-    # SASRec expects usernum, itemnum in *1-based* range.
+    # SASRec expects usernum, itemnum in *1-based* range
     usernum = num_users
-    itemnum = num_items
+    itemnum = sas_itemnum   # <= THIS: match training, not dataset.num_items
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
 
-    with tf.variable_scope("SASRec"):
-        model = Model(usernum, itemnum, args)
+    model = Model(usernum, itemnum, args)
 
     saver = tf.train.Saver()
     ckpt_path = os.path.join(PROJECT_ROOT, "sasrec", "ml-modern-gts_runs", "sasrec.ckpt")
     saver.restore(sess, ckpt_path)
     print("Restored SASRec checkpoint from:", ckpt_path)
 
+    # config = tf.ConfigProto()
+    # config.gpu_options.allow_growth = True
+    # sess = tf.Session(config=config)
+
+    # with tf.variable_scope("SASRec"):
+    #     model = Model(usernum, itemnum, args)
+
+    # saver = tf.train.Saver()
+    # ckpt_path = os.path.join(PROJECT_ROOT, "sasrec", "ml-modern-gts_runs", "sasrec.ckpt")
+    # saver.restore(sess, ckpt_path)
+    # print("Restored SASRec checkpoint from:", ckpt_path)
+    # config = tf.ConfigProto()
+    # config.gpu_options.allow_growth = True
+    # sess = tf.Session(config=config)
+
+    # # IMPORTANT: no extra variable_scope wrapper here,
+    # # Model already uses "SASRec" inside.
+    # model = Model(usernum, itemnum, args)
+
+    # saver = tf.train.Saver()
+    # ckpt_path = os.path.join(PROJECT_ROOT, "sasrec", "ml-modern-gts_runs", "sasrec.ckpt")
+    # saver.restore(sess, ckpt_path)
+    # print("Restored SASRec checkpoint from:", ckpt_path)
+
     # 4) Make score_fn and run unified sampled eval
+    # score_fn = make_sasrec_score_fn(sess, model, user_train_items, maxlen=args.maxlen)
+
+    # hit, ndcg, mrr = evaluate_sampled(
+    #     score_fn=score_fn,
+    #     user_pos_pairs=user_pos_pairs,
+    #     num_items=num_items,
+    #     user_all_pos_items=dataset.user_all_pos_items,
+    #     num_neg=100,
+    #     k=10,
+    #     seed=42,
+    # )
     score_fn = make_sasrec_score_fn(sess, model, user_train_items, maxlen=args.maxlen)
 
     hit, ndcg, mrr = evaluate_sampled(
         score_fn=score_fn,
         user_pos_pairs=user_pos_pairs,
-        num_items=num_items,
+        num_items=sas_num_items_internal,             # NOT dataset.num_items
         user_all_pos_items=dataset.user_all_pos_items,
         num_neg=100,
         k=10,

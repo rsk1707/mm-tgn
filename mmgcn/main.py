@@ -10,6 +10,9 @@ from Train import train
 from Full_vt import full_vt
 # from torch.utils.tensorboard import SummaryWriter
 ###############################248###########################################
+
+# python main.py --data_path movielens --save_file mlm_mmgcn --dim_E 64 --l_r 3e-4 --weight_decay 3e-5 --batch_size 1024 --num_epoch 1000 --topK 10 --has_v True --has_t True --has_a False > mmgcn_baseline.txt
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=1, help='Seed init.')

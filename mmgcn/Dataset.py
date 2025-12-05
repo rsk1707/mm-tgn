@@ -8,42 +8,91 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
-def data_load(dataset, has_v=True, has_a=True, has_t=True):
-    dir_str = './Data/' + dataset
-    train_edge = np.load(dir_str+'/train.npy', allow_pickle=True)
-    user_item_dict = np.load(dir_str+'/user_item_dict.npy', allow_pickle=True).item()
+# def data_load(dataset, has_v=True, has_a=True, has_t=True):
+#     dir_str = './Data/' + dataset
+#     train_edge = np.load(dir_str+'/train.npy', allow_pickle=True)
+#     user_item_dict = np.load(dir_str+'/user_item_dict.npy', allow_pickle=True).item()
 
-    if dataset == 'movielens':
-        num_user = 330
-        num_item = 21651
-        v_feat = np.load(dir_str+'/FeatureVideo_normal.npy', allow_pickle=True) if has_v else None
-        a_feat = np.load(dir_str+'/FeatureAudio_avg_normal.npy', allow_pickle=True) if has_a else None
-        t_feat = np.load(dir_str+'/FeatureText_stl_normal.npy', allow_pickle=True) if has_t else None
-        v_feat = torch.tensor(v_feat, dtype=torch.float).cuda() if has_v else None
-        a_feat = torch.tensor(a_feat, dtype=torch.float).cuda() if has_a else None
-        t_feat = torch.tensor(t_feat, dtype=torch.float).cuda() if has_t else None
-    elif dataset == 'Tiktok':
-        num_user = 36656
-        num_item = 76085
-        if has_v:
-            v_feat = torch.load(dir_str+'/feat_v.pt')
-            v_feat = torch.tensor(v_feat, dtype=torch.float).cuda()
-        else:
-            v_feat = None
+#     if dataset == 'movielens':
+#         num_user = 330
+#         num_item = 21651
+#         v_feat = np.load(dir_str+'/FeatureVideo_normal.npy', allow_pickle=True) if has_v else None
+#         a_feat = np.load(dir_str+'/FeatureAudio_avg_normal.npy', allow_pickle=True) if has_a else None
+#         t_feat = np.load(dir_str+'/FeatureText_stl_normal.npy', allow_pickle=True) if has_t else None
+#         v_feat = torch.tensor(v_feat, dtype=torch.float).cuda() if has_v else None
+#         a_feat = torch.tensor(a_feat, dtype=torch.float).cuda() if has_a else None
+#         t_feat = torch.tensor(t_feat, dtype=torch.float).cuda() if has_t else None
+#     elif dataset == 'Tiktok':
+#         num_user = 36656
+#         num_item = 76085
+#         if has_v:
+#             v_feat = torch.load(dir_str+'/feat_v.pt')
+#             v_feat = torch.tensor(v_feat, dtype=torch.float).cuda()
+#         else:
+#             v_feat = None
 
-        if has_a:
-            a_feat = torch.load(dir_str+'/feat_a.pt')
-            a_feat = torch.tensor(a_feat, dtype=torch.float).cuda() 
-        else:
-            a_feat = None
+#         if has_a:
+#             a_feat = torch.load(dir_str+'/feat_a.pt')
+#             a_feat = torch.tensor(a_feat, dtype=torch.float).cuda() 
+#         else:
+#             a_feat = None
         
-        t_feat = torch.load(dir_str+'/feat_t.pt') if has_t else None
-    elif dataset == 'Kwai':
-        num_user = 7010
-        num_item = 86483
-        v_feat = torch.load(dir_str+'/feat_v.pt')
-        v_feat = torch.tensor(v_feat, dtype=torch.float).cuda()
-        a_feat = t_feat = None
+#         t_feat = torch.load(dir_str+'/feat_t.pt') if has_t else None
+#     elif dataset == 'Kwai':
+#         num_user = 7010
+#         num_item = 86483
+#         v_feat = torch.load(dir_str+'/feat_v.pt')
+#         v_feat = torch.tensor(v_feat, dtype=torch.float).cuda()
+#         a_feat = t_feat = None
+
+#     return num_user, num_item, train_edge, user_item_dict, v_feat, a_feat, t_feat
+def data_load(dataset, has_v=True, has_a=True, has_t=True):
+    """
+    Generic loader for MMGCN data in:
+
+      mmgcn/Data/<dataset>/
+
+    Expects:
+      train.npy             [N_edges, 2] (user, global_item)
+      user_item_dict.npy    dict[user] -> set(global_item)
+      FeatureVideo_normal.npy (optional)
+      FeatureAudio_avg_normal.npy (optional)
+      FeatureText_stl_normal.npy (optional)
+    """
+    dir_str = os.path.join('./Data', dataset)
+
+    train_edge = np.load(os.path.join(dir_str, 'train.npy'), allow_pickle=True)
+    user_item_dict = np.load(os.path.join(dir_str, 'user_item_dict.npy'),
+                             allow_pickle=True).item()
+
+    train_edge = np.asarray(train_edge, dtype=np.int64)
+
+    # infer num_user and num_item from global indices
+    max_user = int(train_edge[:, 0].max())
+    max_node = int(train_edge[:, 1].max())
+
+    num_user = max_user + 1
+    num_item = max_node + 1 - num_user
+
+    v_feat = a_feat = t_feat = None
+
+    # visual
+    v_path = os.path.join(dir_str, 'FeatureVideo_normal.npy')
+    if has_v and os.path.exists(v_path):
+        v_arr = np.load(v_path, allow_pickle=True)
+        v_feat = torch.tensor(v_arr, dtype=torch.float).cuda()
+
+    # audio (you probably won't use this for MovieLens-modern)
+    a_path = os.path.join(dir_str, 'FeatureAudio_avg_normal.npy')
+    if has_a and os.path.exists(a_path):
+        a_arr = np.load(a_path, allow_pickle=True)
+        a_feat = torch.tensor(a_arr, dtype=torch.float).cuda()
+
+    # text
+    t_path = os.path.join(dir_str, 'FeatureText_stl_normal.npy')
+    if has_t and os.path.exists(t_path):
+        t_arr = np.load(t_path, allow_pickle=True)
+        t_feat = torch.tensor(t_arr, dtype=torch.float).cuda()
 
     return num_user, num_item, train_edge, user_item_dict, v_feat, a_feat, t_feat
 

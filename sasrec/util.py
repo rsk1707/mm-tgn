@@ -46,10 +46,16 @@ def evaluate(model, dataset, args, sess):
 
     K = 10
 
-    if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+    # if usernum > 10000:
+    #     users = random.sample(range(1, usernum + 1), 10000)
+    # else:
+    #     users = range(1, usernum + 1)
+    all_users = list(train.keys())
+
+    if len(all_users) > 10000:
+        users = random.sample(all_users, 10000)
     else:
-        users = range(1, usernum + 1)
+        users = all_users
 
     for u in users:
 
@@ -110,10 +116,16 @@ def evaluate_valid(model, dataset, args, sess):
 
     K = 10
 
-    if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+    # if usernum > 10000:
+    #     users = random.sample(range(1, usernum + 1), 10000)
+    # else:
+    #     users = range(1, usernum + 1)
+    all_users = list(train.keys())
+
+    if len(all_users) > 10000:
+        users = random.sample(all_users, 10000)
     else:
-        users = range(1, usernum + 1)
+        users = all_users
 
     for u in users:
         if len(train[u]) < 1 or len(valid[u]) < 1:
