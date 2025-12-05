@@ -146,9 +146,10 @@ def evaluate_ranking(
     timestamps = data.timestamps
     edge_idxs = data.edge_idxs
     
-    # Sample subset for faster evaluation
+    # Sample subset for faster evaluation (FIXED SEED for reproducibility)
     if eval_sample_size and eval_sample_size < len(sources):
-        indices = np.random.choice(len(sources), eval_sample_size, replace=False)
+        rng = np.random.RandomState(42)  # Fixed seed for fair comparison
+        indices = rng.choice(len(sources), eval_sample_size, replace=False)
         indices = np.sort(indices)  # Keep temporal order
         sources = sources[indices]
         destinations = destinations[indices]

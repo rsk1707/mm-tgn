@@ -1,0 +1,18 @@
+{
+  "dataset": "ml-modern",
+  "total_test_size": 150000,
+  "sample_size": 5000,
+  "seed": 42,
+  "full_eval": false,
+  "columns": {
+    "user": "userId",
+    "item": "movieId",
+    "timestamp": "timestamp"
+  },
+  "stats": {
+    "n_users": 1300,
+    "n_items": 2522,
+    "min_timestamp": 1692737711,
+    "max_timestamp": 1697162772
+  }
+}
