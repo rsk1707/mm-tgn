@@ -16,6 +16,11 @@ from baseline_scripts.eval_sampled import (
     build_user_pos_pairs_from_test,
     evaluate_sampled,
 )
+from baseline_scripts.eval_subset import (
+    load_eval_subset_pairs,
+    compute_link_metrics_from_score_fn,
+    evaluate_ranking_multi_k,
+)
 from sasrec.model import Model  # your TF SASRec model :contentReference[oaicite:11]{index=11}
 
 def get_sasrec_itemnum_from_file():
@@ -197,6 +202,114 @@ def main():
 
     print(f"[SASRec | ml-modern] Hit@10={hit:.4f}, NDCG@10={ndcg:.4f}, MRR@10={mrr:.4f}")
 
+def eval_main():
+    dataset_name = "ml-modern"
+
+    # 1) Canonical GTS dataset (for mappings + user histories)
+    dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name=dataset_name)
+    num_users = dataset.num_users
+    num_items_global = dataset.num_items
+    user_train_items = dataset.user_train_items  # 0-based item IDs
+
+    print(f"[GTS] num_users={num_users}, num_items_global={num_items_global}")
+
+    # 2) Load eval subset from eval_samples/ml-modern_eval_sample.csv
+    dataset_eval, user_pos_pairs = load_eval_subset_pairs(
+        root_dir=PROJECT_ROOT,
+        dataset_name=dataset_name,
+        eval_relpath=os.path.join("eval_samples", "ml-modern_eval_sample.csv"),
+    )
+
+    # sanity check: we expect this to be the same dataset object
+    assert dataset_eval.num_users == num_users
+    assert dataset_eval.num_items == num_items_global
+
+    print(f"[Eval subset] #pairs before SASRec filtering: {len(user_pos_pairs)}")
+
+    # 3) SASRec item universe from training file
+    sas_itemnum = get_sasrec_itemnum_from_file()  # 1-based
+    sas_num_items_internal = sas_itemnum          # internal 0..itemnum-1
+
+    # Filter eval pairs to only items SASRec has embeddings for
+    user_pos_pairs = [(u, i) for (u, i) in user_pos_pairs if i < sas_num_items_internal]
+    print(f"[Eval subset] #pairs after SASRec item filter: {len(user_pos_pairs)}")
+
+    if not user_pos_pairs:
+        raise RuntimeError("No eval pairs left after SASRec item filtering.")
+
+    # Trim user_all_pos_items to SASRec item universe for negative sampling
+    trimmed_user_all_pos = {
+        u: [i for i in items if i < sas_num_items_internal]
+        for u, items in dataset.user_all_pos_items.items()
+    }
+
+    # 4) Restore trained SASRec model
+    from argparse import Namespace
+    args = Namespace(
+        maxlen=50,          # must match training setting
+        hidden_units=64,
+        num_blocks=2,
+        num_heads=1,
+        dropout_rate=0.5,
+        l2_emb=0.0,
+        lr=0.001,
+    )
+    
+    usernum = num_users          # users are 1..usernum inside SASRec
+    itemnum = sas_itemnum        # items are 1..itemnum
+
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+
+    model = Model(usernum, itemnum, args)
+
+    saver = tf.train.Saver()
+    ckpt_path = os.path.join(PROJECT_ROOT, "sasrec", "ml-modern-gts_runs", "sasrec.ckpt")
+    saver.restore(sess, ckpt_path)
+    print("[SASRec] Restored checkpoint from:", ckpt_path)
+
+    # 5) Build score_fn
+    score_fn = make_sasrec_score_fn(sess, model, user_train_items, maxlen=args.maxlen)
+
+    # 6) Link prediction metrics on eval subset (AP, AUC, link-MRR)
+    link_metrics = compute_link_metrics_from_score_fn(
+        score_fn=score_fn,
+        user_pos_pairs=user_pos_pairs,
+        num_items=sas_num_items_internal,
+        user_all_pos_items=trimmed_user_all_pos,
+        seed=42,
+    )
+
+    # 7) Ranking metrics on eval subset (Hit/Recall@10/20, NDCG@10/20, full MRR)
+    ranking_metrics = evaluate_ranking_multi_k(
+        score_fn=score_fn,
+        user_pos_pairs=user_pos_pairs,
+        num_items=sas_num_items_internal,
+        user_all_pos_items=trimmed_user_all_pos,
+        ks=(10, 20),
+        num_neg=100,
+        seed=42,
+    )
+
+    # 8) Print nicely
+    print(
+        "\n[SASRec | ml-modern | eval_samples/ml-modern_eval_sample.csv]"
+    )
+
+    print("Link prediction metrics:")
+    print(f"  AP   : {link_metrics['AP']:.4f}")
+    print(f"  AUC  : {link_metrics['AUC']:.4f}")
+    print(f"  MRR  : {link_metrics['MRR']:.4f}")
+
+    print("\nRanking metrics (sampled, 1 pos + 100 negs):")
+    print(f"  Recall@10 / Hit@10: {ranking_metrics['recall@10']:.4f}")
+    print(f"  Recall@20 / Hit@20: {ranking_metrics['recall@20']:.4f}")
+    print(f"  NDCG@10          : {ranking_metrics['ndcg@10']:.4f}")
+    print(f"  NDCG@20          : {ranking_metrics['ndcg@20']:.4f}")
+    print(f"  MRR              : {ranking_metrics['mrr']:.4f}")
+
 
 if __name__ == "__main__":
-    main()
+    # main()
+    eval_main()

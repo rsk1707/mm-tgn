@@ -1,0 +1,18 @@
+[GTS] num_users=10200, num_items_global=21969
+[eval_subset] Loaded 5000 eval pairs from eval_samples/ml-modern_eval_sample.csv.
+[Eval subset] #pairs before SASRec filtering: 5000
+[Eval subset] #pairs after SASRec item filter: 4955
+[SASRec] Restored checkpoint from: /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/sasrec/ml-modern-gts_runs/sasrec.ckpt
+
+[SASRec | ml-modern | eval_samples/ml-modern_eval_sample.csv]
+Link prediction metrics:
+  AP   : 0.8834
+  AUC  : 0.8830
+  MRR  : 0.9498
+
+Ranking metrics:
+  Recall@10 / Hit@10: 0.7473
+  Recall@20 / Hit@20: 0.8553
+  NDCG@10          : 0.4613
+  NDCG@20          : 0.4887
+  MRR              : 0.3834

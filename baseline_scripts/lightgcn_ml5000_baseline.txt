@@ -1,0 +1,14 @@
+[eval_subset] Loaded 5000 eval pairs from eval_samples/ml-modern_eval_sample.csv.
+
+[LightGCN | ml-modern | eval_samples/ml-modern_eval_sample.csv]
+Link prediction metrics:
+  AP   : 0.6439
+  AUC  : 0.5912
+  MRR  : 0.7838
+
+Ranking metrics:
+  Recall@10 / Hit@10: 0.3160
+  Recall@20 / Hit@20: 0.4212
+  NDCG@10          : 0.1869
+  NDCG@20          : 0.2134
+  MRR              : 0.1648

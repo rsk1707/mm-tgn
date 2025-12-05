@@ -1,0 +1,46 @@
+
+STEP 1: Load GTS Dataset + eval subset
+[GTS] num_users=10200, num_items=21969
+[eval_subset] Loaded 5000 eval pairs from eval_samples/ml-modern_eval_sample.csv.
+[Eval subset] #pairs: 5000
+
+STEP 2: Load MMGCN Data (train.npy and features)
+[Paths] MMGCN data directory = /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/mmgcn/Data/ml-modern-gts
+[WARN] num_item from edges (21916) != num_item from features (21969); using feature count.
+[MMGCN data] num_user_m=10200, num_item_m=21969
+[MMGCN data] train_edge shape = (700000, 2)
+[MMGCN data] v_feat shape = torch.Size([21969, 1152])
+[MMGCN data] t_feat shape = torch.Size([21969, 1536])
+
+STEP 3: Recreate MMGCN Model
+[Device] Using device: cuda
+[MMGCN model] Model instantiated.
+
+STEP 4: Load Trained Checkpoint
+[Checkpoint] Loading from: /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/mmgcn/Data/ml-modern-gts/mmgcn_ml-modern-gts.pt
+[Checkpoint] Loaded successfully.
+
+STEP 5: Build Score Function (extract embeddings)
+
+[make_score_fn] Running model.forward() to build embeddings...
+[make_score_fn] forward() complete in 3.64 sec.
+[make_score_fn] all_emb shape = torch.Size([32169, 64])
+[make_score_fn] user_emb: torch.Size([10200, 64]), item_emb: torch.Size([21969, 64])
+[make_score_fn] Score function ready.
+
+STEP 6: Link Prediction Metrics (AP, AUC, link-MRR) on eval subset
+
+STEP 7: Ranking Metrics (Hit/Recall@10/20, NDCG@10/20, MRR) on eval subset
+
+[MMGCN | ml-modern | eval_samples/ml-modern_eval_sample.csv]
+Link prediction metrics:
+  AP   : 0.6972
+  AUC  : 0.7715
+  MRR  : 0.9520
+
+Ranking metrics:
+  Recall@10 / Hit@10: 0.7678
+  Recall@20 / Hit@20: 0.8650
+  NDCG@10          : 0.5211
+  NDCG@20          : 0.5459
+  MRR              : 0.4541
