@@ -510,17 +510,25 @@ def main():
     
     logger.info(f"  Recall@10:  {test_ranking.recall_at_10:.4f}")
     logger.info(f"  Recall@20:  {test_ranking.recall_at_20:.4f}")
+    logger.info(f"  HR@10:      {test_ranking.hit_rate_at_10:.4f}")
+    logger.info(f"  HR@20:      {test_ranking.hit_rate_at_20:.4f}")
     logger.info(f"  NDCG@10:    {test_ranking.ndcg_at_10:.4f}")
     logger.info(f"  NDCG@20:    {test_ranking.ndcg_at_20:.4f}")
     logger.info(f"  MRR:        {test_ranking.mrr:.4f}")
+    logger.info(f"  AUC:        {test_ranking.auc:.4f}")
+    logger.info(f"  AP:         {test_ranking.ap:.4f}")
     logger.info(f"  (Completed in {elapsed/60:.1f} minutes)")
     
     results["test_ranking"] = {
         "recall_at_10": test_ranking.recall_at_10,
         "recall_at_20": test_ranking.recall_at_20,
+        "hit_rate_at_10": test_ranking.hit_rate_at_10,
+        "hit_rate_at_20": test_ranking.hit_rate_at_20,
         "ndcg_at_10": test_ranking.ndcg_at_10,
         "ndcg_at_20": test_ranking.ndcg_at_20,
-        "mrr": test_ranking.mrr
+        "mrr": test_ranking.mrr,
+        "auc": test_ranking.auc,
+        "ap": test_ranking.ap
     }
     
     model.restore_memory(memory_backup)
@@ -539,15 +547,25 @@ def main():
             eval_sample_size=args.eval_sample_size
         )
         logger.info(f"  Recall@10:  {trans_ranking.recall_at_10:.4f}")
+        logger.info(f"  Recall@20:  {trans_ranking.recall_at_20:.4f}")
+        logger.info(f"  HR@10:      {trans_ranking.hit_rate_at_10:.4f}")
+        logger.info(f"  HR@20:      {trans_ranking.hit_rate_at_20:.4f}")
         logger.info(f"  NDCG@10:    {trans_ranking.ndcg_at_10:.4f}")
+        logger.info(f"  NDCG@20:    {trans_ranking.ndcg_at_20:.4f}")
         logger.info(f"  MRR:        {trans_ranking.mrr:.4f}")
+        logger.info(f"  AUC:        {trans_ranking.auc:.4f}")
+        logger.info(f"  AP:         {trans_ranking.ap:.4f}")
         
         results["transductive_ranking"] = {
             "recall_at_10": trans_ranking.recall_at_10,
             "recall_at_20": trans_ranking.recall_at_20,
+            "hit_rate_at_10": trans_ranking.hit_rate_at_10,
+            "hit_rate_at_20": trans_ranking.hit_rate_at_20,
             "ndcg_at_10": trans_ranking.ndcg_at_10,
             "ndcg_at_20": trans_ranking.ndcg_at_20,
-            "mrr": trans_ranking.mrr
+            "mrr": trans_ranking.mrr,
+            "auc": trans_ranking.auc,
+            "ap": trans_ranking.ap
         }
         model.restore_memory(memory_backup)
     
@@ -565,15 +583,25 @@ def main():
             eval_sample_size=args.eval_sample_size
         )
         logger.info(f"  Recall@10:  {induct_ranking.recall_at_10:.4f}")
+        logger.info(f"  Recall@20:  {induct_ranking.recall_at_20:.4f}")
+        logger.info(f"  HR@10:      {induct_ranking.hit_rate_at_10:.4f}")
+        logger.info(f"  HR@20:      {induct_ranking.hit_rate_at_20:.4f}")
         logger.info(f"  NDCG@10:    {induct_ranking.ndcg_at_10:.4f}")
+        logger.info(f"  NDCG@20:    {induct_ranking.ndcg_at_20:.4f}")
         logger.info(f"  MRR:        {induct_ranking.mrr:.4f}")
+        logger.info(f"  AUC:        {induct_ranking.auc:.4f}")
+        logger.info(f"  AP:         {induct_ranking.ap:.4f}")
         
         results["inductive_ranking"] = {
             "recall_at_10": induct_ranking.recall_at_10,
             "recall_at_20": induct_ranking.recall_at_20,
+            "hit_rate_at_10": induct_ranking.hit_rate_at_10,
+            "hit_rate_at_20": induct_ranking.hit_rate_at_20,
             "ndcg_at_10": induct_ranking.ndcg_at_10,
             "ndcg_at_20": induct_ranking.ndcg_at_20,
-            "mrr": induct_ranking.mrr
+            "mrr": induct_ranking.mrr,
+            "auc": induct_ranking.auc,
+            "ap": induct_ranking.ap
         }
     
     # =================================================================
