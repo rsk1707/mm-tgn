@@ -12,7 +12,7 @@ from Full_vt import full_vt
 ###############################248###########################################
 
 # python main.py --data_path movielens --save_file mlm_mmgcn --dim_E 64 --l_r 3e-4 --weight_decay 3e-5 --batch_size 1024 --num_epoch 1000 --topK 10 --has_v True --has_t True --has_a False > mmgcn_baseline.txt
-
+# python main.py --data_path ml-modern-gts --save_file mlm_mmgcn_gts --dim_E 64 --l_r 3e-4 --weight_decay 3e-5 --batch_size 1024 --num_epoch 20 --topK 10 --has_v True --has_t True --has_a False --dropout 0.4 --PATH_weight_save ./Data/ml-modern-gts/mmgcn_ml-modern-gts.pt
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=1, help='Seed init.')
@@ -72,11 +72,25 @@ if __name__ == '__main__':
     ##########################################################################################################################################
     print('Data loading ...')
 
-    num_user, num_item, train_edge, user_item_dict, v_feat, a_feat, t_feat = data_load(data_path)
+    # num_user, num_item, train_edge, user_item_dict, v_feat, a_feat, t_feat = data_load(data_path)
 
-    v_feat = torch.tensor(v_feat, dtype=torch.float).cuda() if has_v else None
-    a_feat = torch.tensor(a_feat, dtype=torch.float).cuda() if has_a else None
-    t_feat = torch.tensor(t_feat, dtype=torch.float).cuda() if has_t else None
+    # v_feat = torch.tensor(v_feat, dtype=torch.float).cuda() if has_v else None
+    # a_feat = torch.tensor(a_feat, dtype=torch.float).cuda() if has_a else None
+    # t_feat = torch.tensor(t_feat, dtype=torch.float).cuda() if has_t else None
+    num_user, num_item, train_edge, user_item_dict, v_feat, a_feat, t_feat = data_load(
+    data_path,
+    has_v=has_v,
+    has_a=has_a,
+    has_t=has_t,
+)
+
+    # data_load already returns CUDA tensors (or None) based on has_v/has_a/has_t.
+    if not has_v:
+        v_feat = None
+    if not has_a:
+        a_feat = None
+    if not has_t:
+        t_feat = None
 
     train_dataset = TrainingDataset(num_user, num_item, user_item_dict, train_edge)
     train_dataloader = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=num_workers)
@@ -111,6 +125,9 @@ if __name__ == '__main__':
             max_recall = test_recall
             max_NDCG = test_ndcg
             num_decreases = 0
+
+            if args.PATH_weight_save is not None:
+                torch.save(model.state_dict(), args.PATH_weight_save)
         else:
             if num_decreases > 20:
                 with open('./Data/'+data_path+'/result_{0}.txt'.format(save_file), 'a') as save_file:

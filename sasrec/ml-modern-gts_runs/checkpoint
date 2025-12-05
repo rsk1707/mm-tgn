@@ -1,0 +1,2 @@
+model_checkpoint_path: "sasrec.ckpt"
+all_model_checkpoint_paths: "sasrec.ckpt"

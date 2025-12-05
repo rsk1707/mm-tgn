@@ -1,0 +1,1 @@
+[SASRec | ml-modern] Hit@10=0.7583, NDCG@10=0.4727, MRR@10=0.3832

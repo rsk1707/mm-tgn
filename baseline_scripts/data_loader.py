@@ -54,11 +54,11 @@ DATASET_SCHEMAS = {
     # Amazon cloth
     "amazon-cloth": dict(
         user_col="user_id",
-        item_col="asin",         # or "parent_asin" if that’s what you want as the item id
+        item_col="asin",
         rating_col="rating",
         ts_col="timestamp",
     ),
-    # Amazon sports (example; adjust to actual folder name)
+    # Amazon sports
     "amazon-sports": dict(
         user_col="user_id",
         item_col="asin",
@@ -145,8 +145,6 @@ def load_gts_dataset(
                 u = user2id[u_raw]
                 i = item2id[i_raw]
             except KeyError:
-                # If there is still some weird mismatch, just skip that row
-                # or you can add a print here for debugging.
                 print("SOME WEIRD MISMATCH")
                 continue
 

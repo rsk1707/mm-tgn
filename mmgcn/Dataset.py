@@ -53,48 +53,70 @@ def data_load(dataset, has_v=True, has_a=True, has_t=True):
       mmgcn/Data/<dataset>/
 
     Expects:
-      train.npy             [N_edges, 2] (user, global_item)
-      user_item_dict.npy    dict[user] -> set(global_item)
-      FeatureVideo_normal.npy (optional)
-      FeatureAudio_avg_normal.npy (optional)
-      FeatureText_stl_normal.npy (optional)
+      train.npy              [N_edges, 2] (user, global_item)
+      user_item_dict.npy     dict[user] -> set(global_item)
+      FeatureVideo_normal.npy        (optional)
+      FeatureAudio_avg_normal.npy    (optional)
+      FeatureText_stl_normal.npy     (optional)
     """
     dir_str = os.path.join('./Data', dataset)
 
     train_edge = np.load(os.path.join(dir_str, 'train.npy'), allow_pickle=True)
-    user_item_dict = np.load(os.path.join(dir_str, 'user_item_dict.npy'),
-                             allow_pickle=True).item()
+    user_item_dict = np.load(
+        os.path.join(dir_str, 'user_item_dict.npy'),
+        allow_pickle=True
+    ).item()
 
     train_edge = np.asarray(train_edge, dtype=np.int64)
 
-    # infer num_user and num_item from global indices
+    # infer num_user and item count from edges first
     max_user = int(train_edge[:, 0].max())
     max_node = int(train_edge[:, 1].max())
 
     num_user = max_user + 1
-    num_item = max_node + 1 - num_user
+    num_item_from_edge = max_node + 1 - num_user
 
     v_feat = a_feat = t_feat = None
+    num_item_from_feat = None
 
     # visual
     v_path = os.path.join(dir_str, 'FeatureVideo_normal.npy')
     if has_v and os.path.exists(v_path):
         v_arr = np.load(v_path, allow_pickle=True)
         v_feat = torch.tensor(v_arr, dtype=torch.float).cuda()
+        num_item_from_feat = v_arr.shape[0]
 
-    # audio (you probably won't use this for MovieLens-modern)
+    # audio (probably unused for MovieLens-modern)
     a_path = os.path.join(dir_str, 'FeatureAudio_avg_normal.npy')
     if has_a and os.path.exists(a_path):
         a_arr = np.load(a_path, allow_pickle=True)
         a_feat = torch.tensor(a_arr, dtype=torch.float).cuda()
+        if num_item_from_feat is None:
+            num_item_from_feat = a_arr.shape[0]
 
     # text
     t_path = os.path.join(dir_str, 'FeatureText_stl_normal.npy')
     if has_t and os.path.exists(t_path):
         t_arr = np.load(t_path, allow_pickle=True)
         t_feat = torch.tensor(t_arr, dtype=torch.float).cuda()
+        if num_item_from_feat is None:
+            num_item_from_feat = t_arr.shape[0]
+
+    # Prefer the feature-based item count when available so that
+    # v_feat / a_feat / t_feat and id_embedding all agree.
+    if num_item_from_feat is not None:
+        if num_item_from_feat != num_item_from_edge:
+            print(
+                f"[WARN] num_item from edges ({num_item_from_edge}) != "
+                f"num_item from features ({num_item_from_feat}); "
+                f"using feature count."
+            )
+        num_item = num_item_from_feat
+    else:
+        num_item = num_item_from_edge
 
     return num_user, num_item, train_edge, user_item_dict, v_feat, a_feat, t_feat
+
 
 class TrainingDataset(Dataset):
     def __init__(self, num_user, num_item, user_item_dict, edge_index):

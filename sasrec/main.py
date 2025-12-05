@@ -103,7 +103,7 @@ t0 = time.time()
 
 try:
     for epoch in range(1, args.num_epochs + 1):
-
+        # print(epoch)
         for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
             u, seq, pos, neg = sampler.next_batch()
             auc, loss, _ = sess.run(
@@ -118,6 +118,7 @@ try:
             )
 
         if epoch % 20 == 0:
+            print(epoch)
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end=' ')

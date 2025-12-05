@@ -1,0 +1,1 @@
+[LightGCN | ml-modern] Hit@10=0.3255, NDCG@10=0.1927, MRR@10=0.1520
