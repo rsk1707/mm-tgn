@@ -132,17 +132,84 @@ Combine TGN's temporal memory with SOTA vision-language features for cold-start 
 
 # SLIDE 6: Multimodal Encoding Strategy
 
-## SOTA Vision-Language Encoders
+## Three Encoder Configurations Available
 
-### Text Encoder: Qwen2-1.5B
+We implemented **three distinct encoder configurations** for comprehensive ablation, though current experiments focus on SOTA due to time/compute constraints.
+
+### Configuration Comparison Table
+| Config | Text Encoder | Text Dim | Image Encoder | Image Dim | **Combined** | Status |
+|--------|--------------|----------|---------------|-----------|--------------|--------|
+| **SOTA** | Qwen2-1.5B-Instruct | 1536 | SigLIP-SO400M | 1152 | **2688** | ✅ Primary |
+| **Baseline** | MPNet-Base-v2 | 768 | CLIP ViT-L-14 | 768 | **1536** | ✅ Ready |
+| **ImageBind** | ImageBind-Huge | 1024 | ImageBind-Huge | 1024 | **2048** | ✅ Ready |
+
+---
+
+### 1. SOTA Configuration (Primary - Used in Experiments)
+
+#### Text: Alibaba Qwen2-1.5B-Instruct
 | Property | Value |
 |----------|-------|
-| Model | Qwen2-1.5B-Instruct |
+| Model | `Alibaba-NLP/gte-Qwen2-1.5B-instruct` |
 | Parameters | 1.5 Billion |
 | Output Dimension | **1536** |
-| Input | Title, Plot, Genres, Cast, Director |
+| Training Data | Large-scale instruction data |
+| Advantage | State-of-the-art semantic understanding |
 
-**Rich Text Prompt Example:**
+#### Image: Google SigLIP-SO400M
+| Property | Value |
+|----------|-------|
+| Model | `ViT-SO400M-14-SigLIP` (webli pretrained) |
+| Parameters | 400 Million |
+| Output Dimension | **1152** |
+| Training Data | WebLI (web-scale image-language) |
+| Advantage | Superior visual semantics vs CLIP |
+
+**Combined: 2688-dim** (1536 + 1152)
+
+---
+
+### 2. Baseline Configuration (Fast, Reliable)
+
+#### Text: Sentence-BERT MPNet
+| Property | Value |
+|----------|-------|
+| Model | `sentence-transformers/all-mpnet-base-v2` |
+| Parameters | 110 Million |
+| Output Dimension | **768** |
+| Advantage | Fast inference, well-tested |
+
+#### Image: OpenCLIP ViT-L-14
+| Property | Value |
+|----------|-------|
+| Model | `ViT-L-14` (laion2b_s32b_b82k) |
+| Parameters | 428 Million |
+| Output Dimension | **768** |
+| Advantage | Standard CLIP, widely used |
+
+**Combined: 1536-dim** (768 + 768)
+
+---
+
+### 3. ImageBind Configuration (Unified Modality Space)
+
+#### Both Text & Image: Meta ImageBind-Huge
+| Property | Value |
+|----------|-------|
+| Model | `imagebind_huge` |
+| Parameters | 1.2 Billion (shared) |
+| Output Dimension | **1024** (both modalities) |
+| Unique Feature | 6-modality aligned space (text, image, audio, video, thermal, IMU) |
+| Advantage | Same embedding space for both modalities |
+
+**Combined: 2048-dim** (1024 + 1024)
+
+**Why ImageBind is Special**: Unlike SOTA/Baseline which use separate encoders, ImageBind projects both text and image into the **same semantic space**, enabling cross-modal operations like `text_embed + image_embed`.
+
+---
+
+### Rich Text Prompt Construction
+All configurations use the same rich text generation:
 ```
 Movie: Inception
 Year: 2010
@@ -153,52 +220,75 @@ Plot: A thief who steals corporate secrets through dream-sharing
 technology is given the task of planting an idea...
 ```
 
-### Image Encoder: SigLIP-SO400M
-| Property | Value |
-|----------|-------|
-| Model | SigLIP-SO400M |
-| Parameters | 400 Million |
-| Output Dimension | **1152** |
-| Input | Movie posters, Product images |
-
-### Combined Feature Vector
-```
-SOTA Features = [Text (1536) | Image (1152)] = 2688-dim
-```
+### Pre-Generated Features Available
+| Dataset | SOTA | Baseline | ImageBind |
+|---------|------|----------|-----------|
+| MovieLens (21,651 items) | ✅ 2688-dim | ✅ 1536-dim | ✅ 2048-dim |
+| Amazon-Cloth (23,669 items) | ⏳ Pending | ⏳ Pending | ⏳ Pending |
+| Amazon-Sports (13,080 items) | ⏳ Pending | ⏳ Pending | ⏳ Pending |
 
 ---
 
 # SLIDE 7: Multimodal Fusion Strategies
 
-## Three Fusion Approaches Compared
+## Three Fusion Approaches Implemented
 
-### 1. MLP Fusion (Concatenate + Project)
+All fusion modules project from raw multimodal features to TGN's working dimension (172).
+
+### 1. MLP Fusion (Concatenate + Project) - **Default**
+```python
+# In modules/embedding.py: MultimodalProjector
+x = concat(text, image)        # [batch, 2688]
+x = Linear(2688, 172) → ReLU → Dropout(0.1)
+x = Linear(172, 172)           # [batch, 172]
 ```
-output = MLP(concat(text, image))
-       = W₂ · ReLU(W₁ · [text; image] + b₁) + b₂
-```
-- **Pros**: Simple, stable training
-- **Cons**: Equal treatment of modalities
+- **Pros**: Simple, stable training, proven effective
+- **Cons**: Equal treatment of modalities (no interaction modeling)
+- **Parameters**: ~500K additional
 
 ### 2. FiLM Fusion (Feature-wise Linear Modulation)
+```python
+# In modules/embedding.py: MultimodalFiLMFusion
+# Text generates modulation parameters for image
+γ = gamma_net(text)  # Scale: MLP(1536) → 172, init to 1
+β = beta_net(text)   # Shift: MLP(1536) → 172, init to 0
+output = γ ⊙ image_proj(image) + β
 ```
-output = γ(text) ⊙ proj(image) + β(text)
-```
-- **Pros**: Text modulates image adaptively
-- **Cons**: More parameters, harder to train
-- **Intuition**: Text semantics (genre, plot) guide visual interpretation
+- **Intuition**: Text semantics (genre, plot) **modulate** visual interpretation
+- **Example**: "Horror movie" should emphasize dark colors in poster
+- **Pros**: Cross-modal interaction, theoretically richer
+- **Cons**: Harder to train, needs careful initialization
+- **Parameters**: ~450K additional
 
 ### 3. Gated Fusion (Learned Attention)
+```python
+# In modules/embedding.py: MultimodalGatedFusion
+text_proj = project(text)      # 1536 → 172
+image_proj = project(image)    # 1152 → 172
+gate = σ(Linear([text; image]))  # Learn which modality matters
+output = gate ⊙ text_proj + (1-gate) ⊙ image_proj
+output = out_proj(output)      # Final projection
 ```
-gate = σ(W · [text; image])
-output = gate ⊙ proj(text) + (1-gate) ⊙ proj(image)
-```
-- **Pros**: Learns modality importance dynamically
-- **Cons**: May converge to trivial solutions
+- **Intuition**: Dynamically weight modalities per item
+- **Example**: Text-heavy items (books) vs image-heavy (fashion)
+- **Pros**: Adaptive, can learn to ignore bad modality
+- **Cons**: May converge to trivial 0.5 weights
+- **Parameters**: ~500K additional
 
-### Dimension Flow
+### Dimension Flow (SOTA Configuration)
 ```
-Text (1536) + Image (1152) ──► Fusion ──► 172-dim (TGN working dim)
+Text (1536) ─┬─► Fusion Module ──► 172-dim (TGN working dimension)
+Image (1152)─┘      │
+                    ├── MLP:   concat → project
+                    ├── FiLM:  text modulates image
+                    └── Gated: learned attention weights
+```
+
+### CLI Argument for Ablation
+```bash
+python train_mmtgn.py --mm-fusion mlp    # Default
+python train_mmtgn.py --mm-fusion film   # FiLM modulation
+python train_mmtgn.py --mm-fusion gated  # Gated attention
 ```
 
 ---
@@ -367,24 +457,43 @@ L_BPR = -log(σ(s_pos - s_neg))
 
 ## Experimental Setup
 
-### Ablation A: Feature Source
-| Variant | Features | Purpose |
-|---------|----------|---------|
-| **Vanilla** | Random nn.Embedding (172-dim) | Lower bound |
-| **SOTA** | Qwen2 + SigLIP (2688-dim) | Our method |
+### Ablation A: Feature Source (Node Embedding Type)
+| Variant | Features | Dimension | Purpose |
+|---------|----------|-----------|---------|
+| **Vanilla** | Random `nn.Embedding` | 172 | Lower bound (pure collaborative) |
+| **SOTA** | Qwen2-1.5B + SigLIP | 2688 → 172 | Our primary method |
+| **Baseline** | MPNet + CLIP | 1536 → 172 | Mid-tier (available, not run) |
+| **ImageBind** | ImageBind-Huge | 2048 → 172 | Unified space (available, not run) |
 
-### Ablation B: Fusion Strategy
-| Variant | Method | Parameters |
-|---------|--------|------------|
-| **MLP** | concat → 2-layer MLP | ~500K |
-| **FiLM** | Text modulates image | ~450K |
-| **Gated** | Learned attention weights | ~500K |
+**CLI**: `--node-feature-type {random, sota, baseline}`
 
-### Control Variables
-- Same TGN architecture
-- Same training configuration
-- Same evaluation protocol
-- Same random seed (42)
+### Ablation B: Multimodal Fusion Strategy
+| Variant | Method | Parameters | Formula |
+|---------|--------|------------|---------|
+| **MLP** | Concatenate + Project | ~500K | `proj([text; image])` |
+| **FiLM** | Text modulates image | ~450K | `γ(text) ⊙ proj(image) + β(text)` |
+| **Gated** | Learned attention | ~500K | `g ⊙ text + (1-g) ⊙ image` |
+
+**CLI**: `--mm-fusion {mlp, film, gated}`
+
+### Ablation C: Encoder Configuration (Not in Current Experiments)
+| Config | Text Model | Image Model | Combined Dim |
+|--------|------------|-------------|--------------|
+| **SOTA** | Qwen2-1.5B | SigLIP-SO400M | 2688 |
+| **Baseline** | MPNet-v2 | CLIP ViT-L | 1536 |
+| **ImageBind** | ImageBind | ImageBind | 2048 |
+
+**Note**: All encoder configs are pre-generated but only SOTA is used in current experiments due to time constraints.
+
+### Control Variables (Fixed Across All Experiments)
+- TGN architecture: 2 layers, 2 heads, 15 neighbors
+- Optimizer: Adam (lr=1e-4, weight_decay=1e-5)
+- Loss: BPR (Bayesian Personalized Ranking)
+- Early stopping: patience=5
+- LR scheduler: ReduceLROnPlateau(factor=0.5, patience=2)
+- Random seed: 42
+- Batch size: 200
+- Evaluation: Fixed 5,000 samples, 100 negatives
 
 ---
 
@@ -605,10 +714,12 @@ Cold Users:    █████████████████████�
 2. **Ablation Framework**: Comprehensive comparison of fusion strategies
 3. **Cold-Start Evaluation**: Rigorous transductive/inductive split analysis
 
-### ⚠️ Limitations
-1. Ranking evaluation is slow (requires separate job)
-2. FiLM fusion needs hyperparameter tuning
-3. Single-channel evaluation (Channel 2 structural features not integrated)
+### ⚠️ Limitations & Future Directions
+1. **Ranking evaluation is slow** - Requires separate 6-hour job (mitigated via fixed 5K samples)
+2. **FiLM fusion underperforms MLP** - Needs hyperparameter tuning (separate LR for modulation nets)
+3. **Only SOTA encoders evaluated** - Baseline and ImageBind configs ready but not run due to time
+4. **Channel 2 not integrated** - Structural features (LightGCN) with FiLM fusion planned but not implemented
+5. **Only MovieLens evaluated** - Amazon datasets processed but experiments pending
 
 ---
 
@@ -618,13 +729,17 @@ Cold Users:    █████████████████████�
 
 ### Short-Term
 1. **Complete Amazon experiments** - Apply to Clothing and Sports datasets
-2. **Channel 2 integration** - Add LightGCN structural features with FiLM fusion
-3. **Hyperparameter tuning** - Grid search for FiLM/Gated fusion
+2. **Encoder ablation** - Compare SOTA vs Baseline vs ImageBind configurations
+3. **Hyperparameter tuning** - Grid search for FiLM/Gated fusion learning rates
+4. **Channel 2 integration** - Add LightGCN structural features with FiLM fusion
 
 ### Long-Term
 1. **User-State FiLM** - Use TGN memory to modulate item features dynamically
-2. **Contrastive learning** - Add self-supervised objectives for better representations
-3. **Efficient full ranking** - Approximate nearest neighbor search
+   - Already implemented in `modules/embedding.py` as `UserStateFiLM`
+   - Formula: `h_adapted = γ(h_user) ⊙ h_item + β(h_user)`
+2. **Cross-modal retrieval** - Leverage ImageBind's unified space for text→image search
+3. **Contrastive learning** - Add self-supervised objectives for better representations
+4. **Efficient full ranking** - Approximate nearest neighbor search (FAISS)
 
 ---
 
@@ -670,6 +785,68 @@ Branch: feature/mm-tgn-first-channel
 
 ---
 
+# APPENDIX: Complete Codebase Structure
+
+```
+mm-tgn/
+├── 📄 train_mmtgn.py          # Main training script (CLI entry point)
+├── 📄 evaluate_mmtgn.py       # Standalone evaluation script
+├── 📄 mmtgn.py                # MM-TGN model definition
+├── 📄 dataset.py              # Temporal dataset loading, splits
+│
+├── 📁 model/                  # Core TGN components
+│   ├── tgn.py                 # Original TGN (reference)
+│   ├── temporal_attention.py  # Multi-head temporal attention
+│   └── time_encoding.py       # Time feature encoding
+│
+├── 📁 modules/                # MM-TGN specific modules
+│   ├── embedding.py           # HybridNodeFeatures, Fusion modules
+│   ├── memory_updater.py      # GRU/LSTM memory updater
+│   └── message_aggregator.py  # Last/Mean aggregation
+│
+├── 📁 utils/                  # Utilities
+│   ├── utils.py               # MergeLayer, EarlyStop, Sampling
+│   └── metrics.py             # Recall@K, NDCG@K, MRR, AUC
+│
+├── 📁 data/
+│   ├── 📁 script/             # Data processing
+│   │   ├── generate_embeddings.py   # SOTA/Baseline/ImageBind encoders
+│   │   ├── tgn_formatter.py         # Create TGN-format files
+│   │   ├── export_splits.py         # Canonical train/val/test
+│   │   └── export_eval_samples.py   # Fixed 5K eval sample
+│   │
+│   ├── 📁 datasets/           # Raw data (gitignored)
+│   ├── 📁 processed/          # TGN-format files
+│   ├── 📁 splits/             # Canonical CSV splits
+│   └── 📁 eval_samples/       # Fixed evaluation samples
+│
+├── 📁 jobs/                   # SLURM job scripts
+│   ├── train_ml_*.sh          # Training jobs
+│   ├── eval_ml_*.sh           # Evaluation jobs
+│   └── submit_all_*.sh        # Batch submission
+│
+├── 📁 checkpoints/            # Saved models (gitignored)
+├── 📁 runs/                   # TensorBoard logs
+└── 📁 logs/                   # SLURM output logs
+```
+
+### Key Classes and Their Roles
+
+| Class | File | Purpose |
+|-------|------|---------|
+| `MMTGN` | `mmtgn.py` | Main model integrating all components |
+| `HybridNodeFeatures` | `modules/embedding.py` | User embeddings + Item projections |
+| `MultimodalProjector` | `modules/embedding.py` | MLP fusion (concat → project) |
+| `MultimodalFiLMFusion` | `modules/embedding.py` | FiLM fusion (text modulates image) |
+| `MultimodalGatedFusion` | `modules/embedding.py` | Gated fusion (learned attention) |
+| `UserStateFiLM` | `modules/embedding.py` | User memory modulates item (future) |
+| `TemporalAttentionLayer` | `model/temporal_attention.py` | Graph attention with time |
+| `Memory` | Base TGN | GRU-based node memory |
+| `NeighborFinder` | `utils/utils.py` | Temporal neighbor sampling |
+| `RankingMetrics` | `utils/metrics.py` | Recall, NDCG, MRR computation |
+
+---
+
 ## Q&A Preparation
 
 ### Likely Questions & Answers
@@ -688,6 +865,34 @@ A: FiLM has more complex optimization landscape. May need:
 
 **Q: How does MM-TGN handle completely new users with no history?**
 A: For new users, the user embedding starts from the learned initialization (row 0 of embedding matrix). The TGN memory accumulates preferences from the first few interactions. SOTA item features provide information even without user history.
+
+**Q: Why not use ImageBind which has unified modality space?**
+A: We have ImageBind features pre-generated (2048-dim). The unified space is theoretically appealing for cross-modal operations, but:
+1. Qwen2 text embeddings are stronger for semantic understanding
+2. SigLIP outperforms ImageBind on visual tasks
+3. Time constraints limited our experiments to SOTA config
+
+**Q: What is UserStateFiLM and why wasn't it used?**
+A: `UserStateFiLM` (implemented in `modules/embedding.py`) uses the user's TGN memory state to modulate item features: `h_adapted = γ(h_user) ⊙ h_item + β(h_user)`. This is designed for Channel 2 (structural) integration where structural embeddings would modulate content features. Currently in bypass mode since Channel 2 isn't integrated.
+
+**Q: Can you explain the 1-based indexing convention?**
+A: 
+- Index 0: Reserved for padding (used in batched operations)
+- Indices 1 to N_users: User IDs
+- Indices N_users+1 to N_users+N_items: Item IDs
+- This is critical for `nn.Embedding` with `padding_idx=0`
+
+**Q: What's the difference between Baseline and SOTA encoder configs?**
+A:
+| Aspect | Baseline | SOTA |
+|--------|----------|------|
+| Text Model | MPNet (110M params) | Qwen2 (1.5B params) |
+| Image Model | CLIP (428M params) | SigLIP (400M params) |
+| Text Dim | 768 | 1536 |
+| Image Dim | 768 | 1152 |
+| Combined | 1536 | 2688 |
+| Quality | Good | Best |
+| Speed | Fast | Slower |
 
 ---
 
@@ -720,22 +925,107 @@ A: For new users, the user embedding starts from the learned initialization (row
 
 # APPENDIX: Model Parameters
 
-| Model Variant | Total Params | Trainable Params |
-|---------------|--------------|------------------|
-| MM-TGN Vanilla | 12,647,783 | 7,082,373 |
-| MM-TGN SOTA+MLP | 10,335,487 | 4,770,077 |
-| MM-TGN SOTA+FiLM | 9,943,471 | 4,378,061 |
+### Parameters by Feature Type
+| Model Variant | Total Params | Trainable Params | Item Feature Source |
+|---------------|--------------|------------------|---------------------|
+| MM-TGN Vanilla | 12,647,783 | 7,082,373 | Random `nn.Embedding(21969, 172)` |
+| MM-TGN SOTA+MLP | 10,335,487 | 4,770,077 | Qwen2 + SigLIP (frozen) + MLP |
+| MM-TGN SOTA+FiLM | 9,943,471 | 4,378,061 | Qwen2 + SigLIP (frozen) + FiLM |
+| MM-TGN Baseline+MLP | ~9.5M | ~4.0M | MPNet + CLIP (frozen) + MLP |
+| MM-TGN ImageBind+MLP | ~9.8M | ~4.2M | ImageBind (frozen) + MLP |
+
+### Parameters Breakdown (SOTA+MLP)
+| Component | Parameters | Trainable |
+|-----------|------------|-----------|
+| User Embeddings | 1,754,400 | ✅ Yes |
+| Item Feature Projector (MLP) | 462,508 | ✅ Yes |
+| TGN Memory | 2,107,120 | ✅ Yes |
+| TGN Message Function | 59,176 | ✅ Yes |
+| TGN Graph Attention | 148,176 | ✅ Yes |
+| Prediction MergeLayer | 238,107 | ✅ Yes |
+| Item SOTA Features | 5,566,000 | ❌ Frozen |
+
+### Encoder Model Sizes (Preprocessing Only)
+| Encoder | Parameters | VRAM Usage | Inference Speed |
+|---------|------------|------------|-----------------|
+| Qwen2-1.5B | 1.5B | ~6GB | ~50 items/sec |
+| SigLIP-SO400M | 400M | ~2GB | ~100 items/sec |
+| MPNet-Base | 110M | ~500MB | ~200 items/sec |
+| CLIP ViT-L | 428M | ~2GB | ~100 items/sec |
+| ImageBind-Huge | 1.2B | ~5GB | ~30 items/sec |
 
 ---
 
 # APPENDIX: Computational Requirements
 
-| Resource | Specification |
-|----------|---------------|
-| GPU | NVIDIA A100 (40GB) or V100 |
-| Memory | 64GB RAM |
-| Training Time | ~4 hours (ML-Modern) |
-| Evaluation Time | ~2-6 hours |
-| Storage | ~500MB per experiment |
+### Training Requirements
+| Resource | Specification | Notes |
+|----------|---------------|-------|
+| GPU | NVIDIA A100 (40GB) or V100 (32GB) | MIG partitions work |
+| GPU Memory | ~8-12GB peak | During attention computation |
+| RAM | 64GB recommended | For feature mmap loading |
+| Training Time | ~4 hours (ML-Modern, 50 epochs) | Early stops ~10-15 epochs |
+| Storage | ~500MB per checkpoint | Best + final models |
+
+### Evaluation Requirements
+| Resource | Specification | Notes |
+|----------|---------------|-------|
+| GPU | Same as training | Batched inference |
+| Evaluation Time | ~2-6 hours | Fixed 5K samples, 100 negs |
+| Peak Memory | ~6GB | During ranking computation |
+
+### Preprocessing Requirements (One-time)
+| Task | Time | GPU | Output |
+|------|------|-----|--------|
+| SOTA Embeddings (21K items) | ~4 hours | A100 | 2688-dim × 21,651 |
+| Baseline Embeddings | ~1 hour | V100 | 1536-dim × 21,651 |
+| ImageBind Embeddings | ~3 hours | A100 | 2048-dim × 21,651 |
+
+### Storage Summary
+| File Type | Size (MovieLens) | Size (Amazon-Cloth) |
+|-----------|------------------|---------------------|
+| SOTA features (.npy) | 233 MB | ~255 MB |
+| Baseline features (.npy) | 133 MB | ~145 MB |
+| ImageBind features (.npy) | 177 MB | ~194 MB |
+| Model checkpoint | ~50 MB | ~50 MB |
+| TensorBoard logs | ~10 MB | ~10 MB |
+
+# APPENDIX: Feature File Specifications
+
+### Generated Feature Files (per dataset)
+```
+data/datasets/<dataset>/features/<config>/
+├── <dataset>_ids.npy           # Item IDs (original)
+├── <dataset>_text_<model>.npy  # Text embeddings [N, text_dim]
+└── <dataset>_image_<model>.npy # Image embeddings [N, image_dim]
+```
+
+### Dimension Reference by Configuration
+| Config | Text Model | Text Dim | Image Model | Image Dim | Combined |
+|--------|------------|----------|-------------|-----------|----------|
+| **sota** | efficient (Qwen2) | 1536 | siglip | 1152 | 2688 |
+| **baseline** | baseline (MPNet) | 768 | clip | 768 | 1536 |
+| **imagebind** | imagebind | 1024 | imagebind | 1024 | 2048 |
+
+### Processing Pipeline
+```bash
+# Generate SOTA features
+python data/script/generate_embeddings.py \
+    --text-model efficient \
+    --image-model siglip \
+    --output-dir data/datasets/movielens-32m/features/sota
+
+# Generate Baseline features  
+python data/script/generate_embeddings.py \
+    --text-model baseline \
+    --image-model clip \
+    --output-dir data/datasets/movielens-32m/features/baseline
+
+# Generate ImageBind features
+python data/script/generate_embeddings.py \
+    --text-model imagebind \
+    --image-model imagebind \
+    --output-dir data/datasets/movielens-32m/features/imagebind
+```
 
 
