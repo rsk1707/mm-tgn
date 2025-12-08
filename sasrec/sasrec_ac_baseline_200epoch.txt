@@ -1,0 +1,21 @@
+
+Evaluating SASRec on amazon-cloth
+[GTS] num_users=68313, num_items_global=23694
+[SASRec] sas_itemnum(from txt)=23694
+[SASRec] Using checkpoint: /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/sasrec/amazon-cloth-gts_runs/sasrec.ckpt
+[SASRec] txt and ckpt agree on itemnum=23694
+[SASRec] Restored checkpoint from: /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/sasrec/amazon-cloth-gts_runs/sasrec.ckpt
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/amazon-cloth/amazon-cloth_eval_sample.csv.
+Link prediction metrics:
+  AP   : 0.7798
+  AUC  : 0.7905
+  MRR  : 0.8968
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.4276
+  Recall@20 / Hit@20: 0.5802
+  NDCG@10          : 0.2415
+  NDCG@20          : 0.2799
+  MRR              : 0.2069

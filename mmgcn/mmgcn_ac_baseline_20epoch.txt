@@ -1,0 +1,30 @@
+
+Evaluating MMGCN on amazon-cloth
+
+STEP 1: Load GTS dataset (for eval metadata)
+  [GTS] num_users=68313, num_items=23694
+
+STEP 2: Load MMGCN graph structure (train.npy, user_item_dict)
+  [MMGCN] num_users=68313, num_items=23694
+
+STEP 3: Load SOTA modality features and align to MMGCN item indices
+[MMGCN] SOTA feature coverage over MMGCN items: covered=23694, missing=0, total_model_items=23694
+
+STEP 4: Instantiate MMGCN model and load checkpoint
+[MMGCN] Loaded checkpoint from /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/mmgcn/Data/amazon-cloth-gts/mmgcn_amazon-cloth-gts.pt
+
+STEP 5: Forward pass to get user/item embeddings
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/amazon-cloth/amazon-cloth_eval_sample.csv.
+Link prediction metrics:
+  AP   : 0.6634
+  AUC  : 0.7111
+  MRR  : 0.9402
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.7430
+  Recall@20 / Hit@20: 0.8424
+  NDCG@10          : 0.4398
+  NDCG@20          : 0.4653
+  MRR              : 0.3554

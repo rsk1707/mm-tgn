@@ -28,28 +28,6 @@ def evaluate_sampled(
     max_examples = -1,
 ):
     """
-    Unified sampled evaluation:
-
-      For each (user, positive_item) in `user_pos_pairs`:
-        - sample `num_neg` negatives from all items except the user's positives
-        - candidates = [positive_item] + negatives
-        - scores = score_fn([user], candidates)
-        - compute Hit@k, NDCG@k, MRR@k based on rank of the positive
-
-    Args:
-        score_fn: function(users, items) -> scores [batch_size, num_candidates]
-                  users: np.ndarray of shape [B] (internal user IDs)
-                  items: np.ndarray of shape [C] (internal item IDs)
-                  returns scores of shape [B, C] (float / higher is better)
-        user_pos_pairs: iterable of (user_id, positive_item_id) (internal IDs)
-        num_items: total number of items
-        user_all_pos_items: mapping user -> list of all positive items
-                            (train+val+test), used to avoid sampling positives
-        num_neg: number of negatives to sample per pair
-        k: cutoff for Hit@k, NDCG@k, MRR@k
-        seed: RNG seed for reproducibility
-        max_examples: if > 0, limit number of pairs evaluated
-
     Returns:
         (hit_at_k, ndcg_at_k, mrr_at_k)
     """
@@ -129,10 +107,11 @@ def evaluate_sampled(
             ndcgs += 0.0
 
         # MRR@k (reciprocal rank if within k, else 0)
-        if pos_rank < k:
-            mrrs += 1.0 / (pos_rank + 1.0)
-        else:
-            mrrs += 0.0
+        # if pos_rank < k:
+        #     mrrs += 1.0 / (pos_rank + 1.0)
+        # else:
+        #     mrrs += 0.0
+        mrrs += 1.0 / (pos_rank + 1.0)
 
         count += 1
 

@@ -23,12 +23,12 @@ sys.path.append(PROJECT_ROOT)
 from baseline_scripts.data_loader import load_gts_dataset
 
 def main():
-    dataset_name = "ml-modern"
+    dataset_name = "amazon-sports"
     dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name=dataset_name)
     num_users = dataset.num_users
     num_items = dataset.num_items
 
-    out_dir = os.path.join(PROJECT_ROOT, "mmgcn", "Data", "ml-modern-gts")
+    out_dir = os.path.join(PROJECT_ROOT, "mmgcn", "Data", "amazon-sports-gts")
     os.makedirs(out_dir, exist_ok=True)
 
     # 1) Train edges (user, global_item = num_users + item)

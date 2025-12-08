@@ -20,7 +20,7 @@ def write_user_item_txt(path, user_items_dict):
 
 
 def main():
-    dataset_name = "ml-modern" # CHANGE TO WHAT YOU WANT
+    dataset_name = "amazon-sports" # CHANGE TO WHAT YOU WANT
     gts_name = dataset_name + "-gts"
 
     dataset = load_gts_dataset(

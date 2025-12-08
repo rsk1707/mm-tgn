@@ -1,0 +1,16 @@
+
+Evaluating LightGCN on ml-modern
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/ml-modern/ml-modern_eval_sample.csv.
+Link prediction metrics:
+  AP   : 0.6399
+  AUC  : 0.5910
+  MRR  : 0.7849
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.3160
+  Recall@20 / Hit@20: 0.4212
+  NDCG@10          : 0.1869
+  NDCG@20          : 0.2134
+  MRR              : 0.1648

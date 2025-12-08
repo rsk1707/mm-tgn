@@ -1,0 +1,35 @@
+
+Evaluating MMGCN on amazon-sports
+
+STEP 1: Load GTS dataset (for eval metadata)
+  [GTS] num_users=31111, num_items=12742
+
+STEP 2: Load MMGCN graph structure (train.npy, user_item_dict)
+  [MMGCN] num_users=31110, num_items=12743
+[WARN] Mismatch between GTS and MMGCN counts:
+       GTS users=31111, MMGCN users=31110
+       GTS items=12742, MMGCN items=12743
+       Proceeding with MMGCN counts and dropping out-of-range eval IDs.
+
+STEP 3: Load SOTA modality features and align to MMGCN item indices
+[MMGCN] SOTA feature coverage over MMGCN items: covered=12742, missing=0, total_model_items=12743
+
+STEP 4: Instantiate MMGCN model and load checkpoint
+[MMGCN] Loaded checkpoint from /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/mmgcn/Data/amazon-sports-gts/mmgcn_amazon-sports-gts.pt
+
+STEP 5: Forward pass to get user/item embeddings
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/amazon-sports/amazon-sports_eval_sample.csv.
+[eval_subset] Dropped 1 / 5000 eval pairs due to out-of-range IDs (max_user_id=31110, max_item_id=12743).
+Link prediction metrics:
+  AP   : 0.5141
+  AUC  : 0.5149
+  MRR  : 0.7681
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.1682
+  Recall@20 / Hit@20: 0.2595
+  NDCG@10          : 0.0950
+  NDCG@20          : 0.1178
+  MRR              : 0.0939

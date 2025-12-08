@@ -1,0 +1,16 @@
+
+Evaluating LightGCN on amazon-cloth
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/amazon-cloth/amazon-cloth_eval_sample.csv.
+Link prediction metrics:
+  AP   : 0.6030
+  AUC  : 0.5420
+  MRR  : 0.7673
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.3288
+  Recall@20 / Hit@20: 0.4040
+  NDCG@10          : 0.2239
+  NDCG@20          : 0.2431
+  MRR              : 0.2065

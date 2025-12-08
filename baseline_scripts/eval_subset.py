@@ -2,7 +2,6 @@
 
 import os
 import random
-from typing import List, Tuple, Dict
 
 import numpy as np
 import pandas as pd
@@ -12,18 +11,7 @@ from baseline_scripts.data_loader import load_gts_dataset, DATASET_SCHEMAS, GTSD
 from baseline_scripts.eval_sampled import evaluate_sampled  # reuse neg-sampling logic
 
 
-def load_eval_subset_pairs(
-    root_dir: str,
-    dataset_name: str,
-    eval_relpath: str,
-) -> Tuple[GTSDataset, List[Tuple[int, int]]]:
-    """
-    Load GTS dataset + eval subset pairs from eval_samples/*.csv.
-
-    The eval CSV is assumed to use the SAME raw user/item IDs as the
-    GTS splits (e.g., userId/movieId for ml-modern). We map raw -> internal
-    with dataset.user2id / dataset.item2id.
-    """
+def load_eval_subset_pairs(root_dir,dataset_name,eval_relpath):
     dataset = load_gts_dataset(root_dir=root_dir, dataset_name=dataset_name)
 
     # Resolve schema for raw column names
@@ -61,13 +49,10 @@ def load_eval_subset_pairs(
     print(f"[eval_subset] Loaded {len(user_pos_pairs)} eval pairs from {eval_relpath}.")
     return dataset, user_pos_pairs
 
-
-# ---------- Link-prediction metrics (AP, AUC, MRR) ----------
-
-def compute_link_pred_metrics(pos_probs: np.ndarray, neg_probs: np.ndarray) -> Dict[str, float]:
+def compute_link_pred_metrics(pos_probs, neg_probs):
     """
     Same semantics as evaluate_mmtgn.compute_link_pred_metrics:
-    compute AP, AUC, and a simple pair-wise MRR. :contentReference[oaicite:1]{index=1}
+    compute AP, AUC, and a simple pair-wise MRR.
     """
     labels = np.concatenate([np.ones(len(pos_probs)), np.zeros(len(neg_probs))])
     scores = np.concatenate([pos_probs, neg_probs])
@@ -96,12 +81,12 @@ def compute_link_pred_metrics(pos_probs: np.ndarray, neg_probs: np.ndarray) -> D
 
 def compute_link_metrics_from_score_fn(
     score_fn,
-    user_pos_pairs: List[Tuple[int, int]],
-    num_items: int,
-    user_all_pos_items: Dict[int, List[int]],
-    seed: int = 42,
-    num_neg: int = 100,
-) -> Dict[str, float]:
+    user_pos_pairs,
+    num_items,
+    user_all_pos_items,
+    seed,
+    num_neg,
+):
     """
     Approximate link-prediction metrics for *static* recommenders.
 
@@ -156,72 +141,18 @@ def compute_link_metrics_from_score_fn(
     neg_arr = np.asarray(neg_scores, dtype=np.float32)
     return compute_link_pred_metrics(pos_arr, neg_arr)
 
-# def compute_link_metrics_from_score_fn(
-#     score_fn,
-#     user_pos_pairs: List[Tuple[int, int]],
-#     num_items: int,
-#     user_all_pos_items: Dict[int, List[int]],
-#     seed: int = 42,
-# ) -> Dict[str, float]:
-#     """
-#     Approximate link-prediction metrics for *static* recommenders:
-
-#     For each (u, pos):
-#       - sample 1 negative item not in user's positives
-#       - compute scores for [pos, neg]
-#       - collect pos_scores and neg_scores and feed into AP/AUC/MRR.
-#     """
-#     rng = random.Random(seed)
-
-#     pos_scores = []
-#     neg_scores = []
-
-#     for (u, pos) in user_pos_pairs:
-#         pos_set = set(user_all_pos_items.get(u, []))
-#         pos_set.add(pos)
-
-#         # Sample ONE negative different from any positive for u
-#         neg = None
-#         attempts = 0
-#         while attempts < 1000:
-#             candidate = rng.randrange(0, num_items)
-#             if candidate not in pos_set:
-#                 neg = candidate
-#                 break
-#             attempts += 1
-
-#         if neg is None:
-#             continue  # degenerate, skip
-
-#         items = np.array([pos, neg], dtype=np.int64)
-#         users = np.array([u], dtype=np.int64)
-#         scores = score_fn(users, items)[0]  # [2]
-
-#         pos_scores.append(scores[0])
-#         neg_scores.append(scores[1])
-
-#     if not pos_scores or not neg_scores:
-#         return {"AP": 0.0, "AUC": 0.5, "MRR": 0.0}
-
-#     pos_arr = np.asarray(pos_scores, dtype=np.float32)
-#     neg_arr = np.asarray(neg_scores, dtype=np.float32)
-#     return compute_link_pred_metrics(pos_arr, neg_arr)
-
-
-# ---------- Ranking metrics (Recall/Hit@K, NDCG@K, full MRR) ----------
-
 def evaluate_ranking_multi_k(
     score_fn,
-    user_pos_pairs: List[Tuple[int, int]],
-    num_items: int,
-    user_all_pos_items: Dict[int, List[int]],
+    user_pos_pairs,
+    num_items,
+    user_all_pos_items,
     ks=(10, 20),
-    num_neg: int = 100,
-    seed: int = 42,
-) -> Dict[str, float]:
+    num_neg= 100,
+    seed = 42,
+):
     """
     Full ranking evaluation with negative sampling, very similar in spirit to
-    evaluate_mmtgn.evaluate_ranking but using our simple score_fn interface. :contentReference[oaicite:2]{index=2}
+    evaluate_mmtgn.evaluate_ranking but using our simple score_fn interface.
 
     Returns:
       {
@@ -247,7 +178,7 @@ def evaluate_ranking_multi_k(
         pos_set = set(user_all_pos_items.get(u, []))
         pos_set.add(pos)
 
-        # Negative sampling (reuse idea from evaluate_sampled) :contentReference[oaicite:3]{index=3}
+        # Negative sampling (reuse idea from evaluate_sampled)
         negs = set()
         attempts = 0
         max_attempts = num_neg * 10

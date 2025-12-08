@@ -11,7 +11,7 @@ from baseline_scripts.data_loader import load_gts_dataset  # uses GTS splits
 
 def main():
     # Canonical name (no "-gts" here)
-    dataset_name = "ml-modern"
+    dataset_name = "amazon-sports"
     gts_name = dataset_name + "-gts"
 
     dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name=dataset_name)

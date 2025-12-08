@@ -11,6 +11,7 @@ from tqdm import tqdm
 from util import *
 import numpy as np
 
+# python main.py --dataset ml-modern-gts --train_dir ml-modern-gts_runs --batch_size 128 --lr 0.001 --maxlen 50 --hidden_units 64 --num_blocks 2 --num_epochs 200 --num_heads 1 --dropout_rate 0.5 --l2_emb 0.0 > sasrec_mm_results_200epoch.txt
 
 def str2bool(s):
     if s not in {'False', 'True'}:

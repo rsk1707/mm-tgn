@@ -1,0 +1,21 @@
+
+Evaluating LightGCN on amazon-sports
+[WARN] LightGCN embedding counts differ from GTS dataset counts:
+       GTS users=31111, emb users=31110
+       GTS items=12742, emb items=12742
+       Will restrict eval to IDs < emb sizes and drop out-of-range pairs.
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/amazon-sports/amazon-sports_eval_sample.csv.
+[eval_subset] Dropped 1 / 5000 eval pairs due to out-of-range IDs (max_user_id=31110, max_item_id=12742).
+Link prediction metrics:
+  AP   : 0.6442
+  AUC  : 0.5990
+  MRR  : 0.7924
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.3131
+  Recall@20 / Hit@20: 0.4125
+  NDCG@10          : 0.1950
+  NDCG@20          : 0.2200
+  MRR              : 0.1765

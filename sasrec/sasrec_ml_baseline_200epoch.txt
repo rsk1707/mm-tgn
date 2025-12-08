@@ -1,0 +1,22 @@
+
+Evaluating SASRec on ml-modern
+[GTS] num_users=10200, num_items_global=21969
+[SASRec] sas_itemnum(from txt)=21916
+[SASRec] Using checkpoint: /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/sasrec/ml-modern-gts_runs/sasrec.ckpt
+[SASRec] txt and ckpt agree on itemnum=21916
+[SASRec] Restored checkpoint from: /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/sasrec/ml-modern-gts_runs/sasrec.ckpt
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/ml-modern/ml-modern_eval_sample.csv.
+[eval_subset] Dropped 45 / 5000 eval pairs due to out-of-range IDs (max_user_id=10200, max_item_id=21916).
+Link prediction metrics:
+  AP   : 0.8834
+  AUC  : 0.8830
+  MRR  : 0.9498
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.7473
+  Recall@20 / Hit@20: 0.8553
+  NDCG@10          : 0.4613
+  NDCG@20          : 0.4887
+  MRR              : 0.3834

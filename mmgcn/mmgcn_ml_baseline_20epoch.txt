@@ -1,0 +1,36 @@
+
+Evaluating MMGCN on ml-modern
+
+STEP 1: Load GTS dataset (for eval metadata)
+  [GTS] num_users=10200, num_items=21969
+
+STEP 2: Load MMGCN graph structure (train.npy, user_item_dict)
+  [MMGCN] num_users=10200, num_items=21916
+[WARN] Mismatch between GTS and MMGCN counts:
+       GTS users=10200, MMGCN users=10200
+       GTS items=21969, MMGCN items=21916
+       Proceeding with MMGCN counts and dropping out-of-range eval IDs.
+
+STEP 3: Load SOTA modality features and align to MMGCN item indices
+[MMGCN] SOTA feature coverage over MMGCN items: covered=21598, missing=318, total_model_items=21916
+[MMGCN] Warning: some items missing SOTA features; using zeros.
+
+STEP 4: Instantiate MMGCN model and load checkpoint
+[MMGCN] Loaded checkpoint from /gpfs/accounts/cse576f25s001_class_root/cse576f25s001_class/akulshre/mm-tgn/mmgcn/Data/ml-modern-gts/mmgcn_ml-modern-gts.pt
+
+STEP 5: Forward pass to get user/item embeddings
+
+Evaluation on eval_samples_final subset
+[eval_subset] Loaded 5000 eval pairs from eval_samples_final/ml-modern/ml-modern_eval_sample.csv.
+[eval_subset] Dropped 45 / 5000 eval pairs due to out-of-range IDs (max_user_id=10200, max_item_id=21916).
+Link prediction metrics:
+  AP   : 0.6890
+  AUC  : 0.7737
+  MRR  : 0.9558
+
+Ranking metrics (full ranking with negative sampling):
+  Recall@10 / Hit@10: 0.7687
+  Recall@20 / Hit@20: 0.8753
+  NDCG@10          : 0.5243
+  NDCG@20          : 0.5514
+  MRR              : 0.4582

@@ -21,7 +21,7 @@ from baseline_scripts.eval_subset import (
     compute_link_metrics_from_score_fn,
     evaluate_ranking_multi_k,
 )
-from sasrec.model import Model  # your TF SASRec model :contentReference[oaicite:11]{index=11}
+from sasrec.model import Model 
 
 def get_sasrec_itemnum_from_file():
     """
@@ -81,9 +81,6 @@ def make_sasrec_score_fn(sess, model, user_train_items, maxlen):
         # candidates: convert to 1-based item IDs for SASRec
         cand_1 = np.array([i + 1 for i in item_ids], dtype=np.int32)
 
-        # Model.predict expects:
-        #   u: [batch], seq: [batch, L], item_idx: [num_candidates]
-        # and returns logits [batch, num_candidates]. :contentReference[oaicite:13]{index=13}
         logits = model.predict(sess, u_sas, seq, cand_1)
 
         # ensure shape [1, C]
@@ -103,10 +100,9 @@ def main():
     # dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name="ml-modern")
     # num_users = dataset.num_users
     # num_items = dataset.num_items
-    # user_train_items = dataset.user_train_items  # 0-based item IDs :contentReference[oaicite:14]{index=14}
-
+    # user_train_items = dataset.user_train_items  # 0-based item IDs 
     # # 2) Build user-pos pairs from GTS *test* split
-    # user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)  # :contentReference[oaicite:15]{index=15}
+    # user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)
 
     # 1) Canonical GTS dataset (all splits)
     dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name="ml-modern")

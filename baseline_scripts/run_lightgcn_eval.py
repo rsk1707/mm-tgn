@@ -37,36 +37,36 @@ def make_lightgcn_score_fn(
     return score_fn
 
 
-def main():
-    dataset_name = "ml-modern"
-    gts_name = dataset_name + "-gts"
+# def main():
+#     dataset_name = "amazon-cloth"
+#     gts_name = dataset_name + "-gts"
 
-    # 1) Canonical GTS dataset (same as MM-TGN)
-    dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name=dataset_name)
+#     # 1) Canonical GTS dataset (same as MM-TGN)
+#     dataset = load_gts_dataset(root_dir=PROJECT_ROOT, dataset_name=dataset_name)
 
-    # 2) Load trained LightGCN embeddings
-    emb_dir = os.path.join(PROJECT_ROOT, "lightgcn", "Data", gts_name)
-    user_emb = np.load(os.path.join(emb_dir, "user_emb.npy"))
-    item_emb = np.load(os.path.join(emb_dir, "item_emb.npy"))
+#     # 2) Load trained LightGCN embeddings
+#     emb_dir = os.path.join(PROJECT_ROOT, "lightgcn", "Data", gts_name)
+#     user_emb = np.load(os.path.join(emb_dir, "user_emb.npy"))
+#     item_emb = np.load(os.path.join(emb_dir, "item_emb.npy"))
 
-    # 3) Build score_fn adapter
-    score_fn = make_lightgcn_score_fn(user_emb, item_emb)
+#     # 3) Build score_fn adapter
+#     score_fn = make_lightgcn_score_fn(user_emb, item_emb)
 
-    # 4) Build test pairs from the GTS *test* split
-    user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)
+#     # 4) Build test pairs from the GTS *test* split
+#     user_pos_pairs = build_user_pos_pairs_from_test(dataset.user_test_items)
 
-    # 5) Unified sampled evaluation (1 pos + 100 negs, K=10)
-    hit, ndcg, mrr = evaluate_sampled(
-        score_fn=score_fn,
-        user_pos_pairs=user_pos_pairs,
-        num_items=dataset.num_items,
-        user_all_pos_items=dataset.user_all_pos_items,
-        num_neg=100,
-        k=10,
-        seed=42,
-    )
+#     # 5) Unified sampled evaluation (1 pos + 100 negs, K=10)
+#     hit, ndcg, mrr = evaluate_sampled(
+#         score_fn=score_fn,
+#         user_pos_pairs=user_pos_pairs,
+#         num_items=dataset.num_items,
+#         user_all_pos_items=dataset.user_all_pos_items,
+#         num_neg=100,
+#         k=10,
+#         seed=42,
+#     )
 
-    print(f"[LightGCN | {dataset_name}] Hit@10={hit:.4f}, NDCG@10={ndcg:.4f}, MRR@10={mrr:.4f}")
+#     print(f"[LightGCN | {dataset_name}] Hit@10={hit:.4f}, NDCG@10={ndcg:.4f}, MRR@10={mrr:.4f}")
 
 def eval_main():
     dataset_name = "ml-modern"
