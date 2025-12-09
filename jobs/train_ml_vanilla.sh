@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus=1
 #SBATCH --mem=64G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/train_ml_vanilla_%j.out
 #SBATCH --error=logs/train_ml_vanilla_%j.err
 

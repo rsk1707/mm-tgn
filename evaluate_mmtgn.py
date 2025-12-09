@@ -158,8 +158,24 @@ def evaluate_ranking(
     
     n_samples = len(sources)
     
-    # Pre-sample negatives
-    all_neg_items = np.random.choice(all_items, size=(n_samples, n_negatives), replace=True)
+    # Pre-sample negatives (EXCLUDING the positive item for each sample)
+    # This is critical for fair evaluation - negatives should not include the ground truth
+    # Use fixed seed for reproducibility across all models
+    neg_rng = np.random.RandomState(42)
+    all_neg_items = np.zeros((n_samples, n_negatives), dtype=np.int64)
+    
+    for i in range(n_samples):
+        positive_item = destinations[i]
+        # Sample candidates (slightly more to account for filtering)
+        candidates = neg_rng.choice(all_items, size=n_negatives + 10, replace=True)
+        # Filter out the positive item
+        valid_negs = candidates[candidates != positive_item][:n_negatives]
+        # If we don't have enough, sample more
+        while len(valid_negs) < n_negatives:
+            more = neg_rng.choice(all_items, size=n_negatives, replace=True)
+            more = more[more != positive_item]
+            valid_negs = np.concatenate([valid_negs, more])[:n_negatives]
+        all_neg_items[i] = valid_negs
     
     all_pos_scores = []
     all_neg_scores = []
@@ -258,8 +274,10 @@ def main():
     parser = argparse.ArgumentParser(description="MM-TGN Evaluation")
     
     # Required
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to model checkpoint (best_model.pt)")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Path to model checkpoint file (best_model.pt)")
+    parser.add_argument("--checkpoint-dir", type=str, default=None,
+                        help="Path to checkpoint directory (will look for best_model.pt inside)")
     parser.add_argument("--data-dir", type=str, required=True,
                         help="Path to processed data directory")
     parser.add_argument("--dataset", type=str, required=True,
@@ -285,10 +303,35 @@ def main():
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Output directory for results (default: same as checkpoint)")
     
+    # Model config (for reconstruction)
+    parser.add_argument("--node-feature-type", type=str, default=None,
+                        help="Node feature type (sota/baseline/random). Auto-detected if not provided.")
+    parser.add_argument("--mm-fusion", type=str, default=None,
+                        help="Multimodal fusion mode (mlp/film/gated). Auto-detected if not provided.")
+    
+    # Reproducibility
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility")
+    
     args = parser.parse_args()
     
+    # Handle checkpoint path
+    if args.checkpoint:
+        checkpoint_path = Path(args.checkpoint)
+    elif args.checkpoint_dir:
+        checkpoint_dir = Path(args.checkpoint_dir)
+        checkpoint_path = checkpoint_dir / "best_model.pt"
+        if not checkpoint_path.exists():
+            # Try to find any .pt file
+            pt_files = list(checkpoint_dir.glob("*.pt"))
+            if pt_files:
+                checkpoint_path = pt_files[0]
+            else:
+                raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
+    else:
+        raise ValueError("Must provide either --checkpoint or --checkpoint-dir")
+    
     # Setup
-    checkpoint_path = Path(args.checkpoint)
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
@@ -297,12 +340,19 @@ def main():
     
     logger = setup_logging(str(output_dir / "evaluation.log"))
     
+    # Set random seed for reproducibility
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+    
     logger.info("=" * 70)
     logger.info("MM-TGN Evaluation")
     logger.info("=" * 70)
     logger.info(f"Checkpoint: {checkpoint_path}")
     logger.info(f"Dataset: {args.dataset}")
     logger.info(f"Device: {args.device}")
+    logger.info(f"Seed: {args.seed}")
     
     # Device
     device = args.device
@@ -345,9 +395,9 @@ def main():
     # Create model with same config
     logger.info("\n🏗️ Creating model...")
     
-    # Get saved args or use defaults
-    node_feature_type = saved_args.get('node_feature_type', 'sota')
-    mm_fusion = saved_args.get('mm_fusion', 'mlp')
+    # Get saved args or use defaults (command line overrides saved args)
+    node_feature_type = args.node_feature_type or saved_args.get('node_feature_type', 'sota')
+    mm_fusion = args.mm_fusion or saved_args.get('mm_fusion', 'mlp')
     embedding_dim = saved_args.get('embedding_dim', 172)
     n_layers = saved_args.get('n_layers', 2)
     n_heads = saved_args.get('n_heads', 2)

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mmtgn_ml_gated
+#SBATCH --job-name=mmtgn_cloth_sota
 #SBATCH --account=cse576f25s001_class
 #SBATCH --partition=gpu_mig40,gpu,spgpu
 #SBATCH --nodes=1
@@ -8,15 +8,15 @@
 #SBATCH --gpus=1
 #SBATCH --mem=64G
 #SBATCH --time=08:00:00
-#SBATCH --output=logs/train_ml_sota_gated_%j.out
-#SBATCH --error=logs/train_ml_sota_gated_%j.err
+#SBATCH --output=logs/train_cloth_sota_%j.out
+#SBATCH --error=logs/train_cloth_sota_%j.err
 
 # ==============================================================================
-# MM-TGN Training: MovieLens SOTA + Gated Fusion
-# Experiment: Gated fusion (learned attention weights for text vs image)
+# MM-TGN Training: Amazon Cloth SOTA Features (MLP Fusion)
+# Experiment: Full multimodal pipeline (Qwen2 + SigLIP) with MLP
 # ==============================================================================
 
-echo "🚀 MM-TGN Training: ML-Modern SOTA + Gated Fusion"
+echo "🚀 MM-TGN Training: Amazon Cloth SOTA (MLP Fusion)"
 echo "Date: $(date)"
 echo "Node: $(hostname)"
 echo ""
@@ -28,10 +28,10 @@ conda activate mmtgn
 mkdir -p logs
 
 python train_mmtgn.py \
-    --data-dir data/processed \
-    --dataset ml-modern \
+    --data-dir data/processed/amazon-cloth \
+    --dataset amazon-cloth \
     --node-feature-type sota \
-    --mm-fusion gated \
+    --mm-fusion mlp \
     --embedding-dim 172 \
     --n-layers 2 \
     --n-heads 2 \
@@ -43,7 +43,7 @@ python train_mmtgn.py \
     --patience 5 \
     --no-eval-ranking \
     --n-neg-eval 100 \
-    --run-name "ml_sota_gated_$(date +%Y%m%d)"
+    --run-name "cloth_sota_mlp_$(date +%Y%m%d)"
 
 echo ""
 echo "✅ Training complete!"

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_ml_sota_film
+#SBATCH --job-name=eval_cloth_film
 #SBATCH --account=cse576f25s001_class
 #SBATCH --partition=gpu_mig40,gpu,spgpu
 #SBATCH --nodes=1
@@ -8,15 +8,15 @@
 #SBATCH --gpus=1
 #SBATCH --mem=64G
 #SBATCH --time=08:00:00
-#SBATCH --output=logs/eval_ml_sota_film_%j.out
-#SBATCH --error=logs/eval_ml_sota_film_%j.err
+#SBATCH --output=logs/eval_cloth_sota_film_%j.out
+#SBATCH --error=logs/eval_cloth_sota_film_%j.err
 
 # ==============================================================================
-# MM-TGN Evaluation: MovieLens SOTA (FiLM Fusion)
-# Separate evaluation job for comprehensive ranking metrics
+# MM-TGN Evaluation: Amazon Cloth - SOTA Features (FiLM Fusion)
+# Full ranking evaluation on test set
 # ==============================================================================
 
-echo "📊 MM-TGN Evaluation: ML-Modern SOTA (FiLM)"
+echo "📊 MM-TGN Evaluation: Amazon Cloth SOTA (FiLM)"
 echo "Date: $(date)"
 echo "Node: $(hostname)"
 echo ""
@@ -25,33 +25,29 @@ cd /scratch/cse576f25s001_class_root/cse576f25s001_class/huseynli/mm-tgn
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate mmtgn
 
-mkdir -p logs
-
-# Find the latest FiLM checkpoint
-CHECKPOINT_DIR=$(ls -td checkpoints/ml_sota_film_* 2>/dev/null | head -1)
+# Find the latest SOTA FiLM checkpoint
+CHECKPOINT_DIR=$(ls -td checkpoints/cloth_sota_film_* 2>/dev/null | head -1)
 
 if [ -z "$CHECKPOINT_DIR" ]; then
-    echo "❌ No SOTA (FiLM) checkpoint found!"
-    echo "   Run train_ml_sota_film.sh first"
+    echo "❌ No SOTA FiLM checkpoint found!"
     exit 1
 fi
 
-CHECKPOINT="$CHECKPOINT_DIR/best_model.pt"
-echo "📦 Using checkpoint: $CHECKPOINT"
+echo "📂 Checkpoint: $CHECKPOINT_DIR"
+echo ""
 
 python evaluate_mmtgn.py \
-    --checkpoint "$CHECKPOINT" \
-    --data-dir data/processed \
-    --dataset ml-modern \
+    --checkpoint-dir "$CHECKPOINT_DIR" \
+    --data-dir data/processed/amazon-cloth \
+    --dataset amazon-cloth \
     --node-feature-type sota \
     --mm-fusion film \
+    --batch-size 200 \
+    --n-neighbors 15 \
     --n-neg-eval 100 \
     --eval-sample-size 5000 \
-    --batch-size 200 \
-    --ranking-batch-size 100 \
     --seed 42
 
 echo ""
 echo "✅ Evaluation complete!"
-echo "📁 Results saved to: $CHECKPOINT_DIR/"
 

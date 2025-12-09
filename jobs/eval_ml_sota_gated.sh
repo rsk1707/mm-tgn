@@ -6,8 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus=1
-#SBATCH --mem=32G
-#SBATCH --time=06:00:00
+#SBATCH --mem=64G
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/eval_ml_sota_gated_%j.out
 #SBATCH --error=logs/eval_ml_sota_gated_%j.err
 
@@ -43,10 +43,13 @@ python evaluate_mmtgn.py \
     --checkpoint "$CHECKPOINT" \
     --data-dir data/processed \
     --dataset ml-modern \
+    --node-feature-type sota \
+    --mm-fusion gated \
     --n-neg-eval 100 \
     --eval-sample-size 5000 \
     --batch-size 200 \
-    --ranking-batch-size 100
+    --ranking-batch-size 100 \
+    --seed 42
 
 echo ""
 echo "✅ Evaluation complete!"

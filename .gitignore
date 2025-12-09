@@ -1,68 +1,56 @@
 # =============================================================================
 # MM-TGN: Multimodal Temporal Graph Network
-# .gitignore - Optimized for Research Project
+# .gitignore - Professional GitHub Repository
 # =============================================================================
 
 # =============================================================================
-# PROJECT-SPECIFIC: DATA & OUTPUTS (CRITICAL - DO NOT COMMIT)
+# DATA & LARGE FILES (Do NOT commit - too large for GitHub)
 # =============================================================================
 
-# --- Data Directories ---
-data/datasets/           # Raw datasets (MovieLens, Amazon, etc.)
-data/processed/          # TGN-formatted data
-data/processed_baseline/ # Baseline encoder features
-datasets/                # Alternative data location
+# Raw and processed datasets
+data/datasets/
+data/processed/
+data/splits/
+data/eval_samples/
 
-# --- Training Outputs ---
-runs/                    # TensorBoard event logs
-checkpoints/             # Model checkpoints (.pt files)
-logs/                    # Training log files
-
-# --- HPC/SLURM Outputs ---
-*.out                    # SLURM stdout files
-*.err                    # SLURM stderr files
-slurm-*.out              # SLURM job outputs
-
-# --- Large Binary Files ---
-*.npy                    # NumPy arrays (features, embeddings)
-*.npz                    # Compressed NumPy arrays
-*.pt                     # PyTorch model weights
-*.pth                    # PyTorch checkpoints
-*.safetensors            # HuggingFace model format
-*.bin                    # Binary files
-*.h5                     # HDF5 files
-*.hdf5                   # HDF5 files
-
-# --- Compressed Archives ---
-*.tar.gz
-*.tar.bz2
-*.zip
-*.7z
-*.rar
-
-# --- Data Files ---
-*.csv                    # Interaction data, metadata
-*.json                   # Node maps, configs (regenerable)
-*.parquet                # Parquet data files
-*.pkl                    # Pickle files
-*.pickle                 # Pickle files
-
-# --- Images (Downloadable) ---
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.webp
-posters/
-images/
+# Embedding files
+*.npy
+*.npz
 
 # =============================================================================
-# PYTHON STANDARD
+# TRAINING OUTPUTS
+# =============================================================================
+
+# Model checkpoints
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# TensorBoard logs
+runs/
+
+# Training logs
+logs/
+*.log
+
+# =============================================================================
+# HPC / SLURM
+# =============================================================================
+
+*.out
+*.err
+slurm-*.out
+
+# =============================================================================
+# PYTHON
 # =============================================================================
 
 # Byte-compiled / optimized
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 *.so
 
@@ -73,51 +61,13 @@ dist/
 .eggs/
 *.egg
 .Python
-develop-eggs/
-downloads/
-eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.manifest
-*.spec
-MANIFEST
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
 
 # Virtual environments
 .env
-.envrc
 .venv
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
-
-# =============================================================================
-# TESTING & COVERAGE
-# =============================================================================
-
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.nox/
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-cover/
-.cache
 
 # =============================================================================
 # IDE & EDITORS
@@ -125,9 +75,11 @@ cover/
 
 # VSCode
 .vscode/
+*.code-workspace
 
 # PyCharm / JetBrains
 .idea/
+*.iml
 
 # Vim
 *.swp
@@ -143,23 +95,22 @@ cover/
 .cursorindexingignore
 
 # =============================================================================
-# TYPE CHECKING & LINTING
+# TESTING & TOOLS
 # =============================================================================
 
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 .mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-.pytype/
 .ruff_cache/
 
 # =============================================================================
-# JUPYTER / NOTEBOOKS
+# JUPYTER
 # =============================================================================
 
 .ipynb_checkpoints/
-profile_default/
-ipython_config.py
+*.ipynb
 
 # =============================================================================
 # SYSTEM FILES
@@ -167,7 +118,6 @@ ipython_config.py
 
 .DS_Store
 Thumbs.db
-*.log
 *.bak
 *.tmp
 *.temp
@@ -176,55 +126,43 @@ Thumbs.db
 # MISC
 # =============================================================================
 
-# Sphinx docs
-docs/_build/
+# Compressed archives
+*.tar.gz
+*.tar.bz2
+*.zip
+*.7z
 
-# PyBuilder
-.pybuilder/
-target/
+# Images (usually too large)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
 
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath
-*.sage.py
-
-# Cython
-cython_debug/
-
-# Package managers (keep lock files for reproducibility)
-# Uncomment if you want to ignore:
-# poetry.lock
-# Pipfile.lock
-# uv.lock
-
-.pdm-python
-.pdm-build/
-.pixi
-__pypackages__/
-
-# PyPI
-.pypirc
+# Data files that can be regenerated
+*.csv
+*.json
+*.parquet
+*.pkl
+*.pickle
+*.h5
+*.hdf5
 
 # =============================================================================
-# EXCEPTIONS: Files to KEEP (uncomment as needed)
+# EXCEPTIONS: Files to KEEP (override above patterns)
 # =============================================================================
 
-# Keep specific config files:
-# !config/*.json
-# !data/config/*.json
+# Keep requirements
+!requirements.txt
 
-# Keep requirements:
-# Already tracked: requirements.txt, ARCHITECTURE.md, scripts/
-checkpoints/
-data/datasets/
-data/processed/
-data/script/.checkpoints/
-logs/
-runs/ablation_A_vanilla_random/
-runs/smoke_test_fixed/
-runs/smoke_test_v2/
-runs/sota_full_run/
-runs/vanilla_baseline/
-runs/vanilla_fixed_test/
+# Keep job scripts
+!jobs/*.sh
+
+# Keep data processing scripts
+!data/script/*.py
+!data/script/*.sh
+
+# Keep documentation images if added to docs/
+!docs/*.png
+!docs/*.jpg
+!docs/*.gif
